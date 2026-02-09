@@ -18,6 +18,14 @@ RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY ui/package.json ./ui/package.json
+# Copy extension package.json files that have external deps (pnpm needs them early)
+COPY extensions/claude-code/package.json ./extensions/claude-code/package.json
+COPY extensions/security-filter/package.json ./extensions/security-filter/package.json
+COPY extensions/gmail-manager/package.json ./extensions/gmail-manager/package.json
+COPY extensions/calendar-manager/package.json ./extensions/calendar-manager/package.json
+COPY extensions/drive-manager/package.json ./extensions/drive-manager/package.json
+COPY extensions/notion-manager/package.json ./extensions/notion-manager/package.json
+COPY extensions/obsidian-manager/package.json ./extensions/obsidian-manager/package.json
 COPY patches ./patches
 COPY scripts ./scripts
 
@@ -30,6 +38,10 @@ ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build
 
 ENV NODE_ENV=production
+
+# Install Claude Code CLI (needed by claude-code plugin Agent SDK)
+# Install coding agent CLIs (needed by plugin SDKs)
+RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
 # Allow non-root user to write temp files during runtime/tests.
 RUN chown -R node:node /app
