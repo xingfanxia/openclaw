@@ -1,0 +1,14 @@
+{
+  "name": "@openclaw/obsidian-manager",
+  "version": "0.1.0",
+  "description": "Obsidian vault management extension for OpenClaw",
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "simple-git": "^3.27.0"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  }
+}
