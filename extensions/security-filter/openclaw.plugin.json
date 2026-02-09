@@ -1,0 +1,39 @@
+{
+  "name": "@openclaw/security-filter",
+  "version": "1.0.0",
+  "description": "Intercepts outgoing messages and tool calls to detect and block/redact secrets",
+  "entry": "index.ts",
+  "configSchema": {
+    "mode": {
+      "type": "string",
+      "enum": ["strict", "normal", "permissive"],
+      "default": "strict",
+      "description": "Secret detection mode: strict (block), normal (redact), permissive (warn only)"
+    },
+    "logPath": {
+      "type": "string",
+      "default": "./security-audit.jsonl",
+      "description": "Path to the JSON-lines audit log file"
+    },
+    "allowlist": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "List of pattern names to ignore (e.g. ['Generic JWT'])"
+    },
+    "customPatterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "regex": { "type": "string" },
+          "flags": { "type": "string", "default": "g" }
+        },
+        "required": ["name", "regex"]
+      },
+      "default": [],
+      "description": "Custom secret patterns to detect"
+    }
+  }
+}
