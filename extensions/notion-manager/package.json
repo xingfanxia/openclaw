@@ -1,0 +1,13 @@
+{
+  "name": "@openclaw/notion-manager",
+  "version": "0.1.0",
+  "description": "Notion workspace management extension for OpenClaw",
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {
+    "@notionhq/client": "^2.2.0"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  }
+}

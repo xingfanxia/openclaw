@@ -1,0 +1,19 @@
+{
+  "id": "notion-manager",
+  "name": "Notion Manager",
+  "description": "Notion workspace management with search, read, create, update, and database operations via Notion API.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "integrationToken": {
+        "type": "string",
+        "description": "Notion internal integration token (starts with ntn_ or secret_)"
+      },
+      "defaultWorkspace": {
+        "type": "string",
+        "description": "Default workspace name for display purposes"
+      }
+    }
+  }
+}
