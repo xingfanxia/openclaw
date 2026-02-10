@@ -41,7 +41,12 @@ ENV NODE_ENV=production
 
 # Install Claude Code CLI (needed by claude-code plugin Agent SDK)
 # Install coding agent CLIs (needed by plugin SDKs)
-RUN npm install -g @anthropic-ai/claude-code @openai/codex
+# GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g @anthropic-ai/claude-code @openai/codex vercel
 
 # Allow non-root user to write temp files during runtime/tests.
 RUN chown -R node:node /app

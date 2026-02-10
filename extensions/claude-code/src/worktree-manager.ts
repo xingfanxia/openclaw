@@ -1,23 +1,23 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readdir, mkdir, stat, rm } from "node:fs/promises";
+import { readdir, mkdir } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
 export interface WorktreeConfig {
-  mode?: "off" | "auto" | "opt-in";
-  basePath?: string;
-  cleanupAfterHours?: number;
-  branchPrefix?: string;
+  mode: "off" | "auto" | "opt-in";
+  basePath: string;
+  cleanupAfterHours: number;
+  branchPrefix: string;
 }
 
 export interface WorktreeInfo {
   branchName: string;
   path: string;
   projectPath: string;
-  createdAt: number;
+  createdAt: Date;
 }
 
 export interface WorktreeSummary {
@@ -30,55 +30,24 @@ export interface WorktreeSummary {
 }
 
 export class WorktreeManager {
-  private config: Required<WorktreeConfig>;
+  private config: WorktreeConfig;
 
-  constructor(config: Partial<WorktreeConfig> = {}) {
+  constructor(config: Partial<WorktreeConfig> & { basePath: string }) {
     this.config = {
-      mode: (config.mode as "off" | "auto" | "opt-in") ?? "opt-in",
-      basePath: config.basePath ?? "/home/node/projects/.worktrees",
-      cleanupAfterHours: config.cleanupAfterHours ?? 24,
-      branchPrefix: config.branchPrefix ?? "openclaw/",
+      mode: config.mode ?? "auto",
+      basePath: config.basePath,
+      cleanupAfterHours: config.cleanupAfterHours ?? 168, // 7 days
+      branchPrefix: config.branchPrefix ?? "session/",
     };
   }
 
-  /**
-   * Decide whether to use a worktree based on config mode and explicit parameter.
-   */
-  shouldUseWorktree(explicitParam: boolean | undefined, isGitRepo: boolean): boolean {
-    // Explicit param always wins
-    if (typeof explicitParam === "boolean") return explicitParam && isGitRepo;
-
-    // Config mode
-    switch (this.config.mode) {
-      case "off":
-        return false;
-      case "auto":
-        return isGitRepo;
-      case "opt-in":
-      default:
-        return false;
-    }
-  }
-
-  /**
-   * Create a new worktree for a project.
-   */
   async create(projectPath: string): Promise<WorktreeInfo> {
-    const hexId = randomBytes(3).toString("hex");
     const now = new Date();
-    const timestamp = [
-      now.getFullYear().toString(),
-      (now.getMonth() + 1).toString().padStart(2, "0"),
-      now.getDate().toString().padStart(2, "0"),
-      "-",
-      now.getHours().toString().padStart(2, "0"),
-      now.getMinutes().toString().padStart(2, "0"),
-      now.getSeconds().toString().padStart(2, "0"),
-    ].join("");
-
-    const branchName = `${this.config.branchPrefix}${timestamp}-${hexId}`;
+    const hex = randomBytes(3).toString("hex");
+    const timestamp = formatTimestamp(now);
+    const branchName = `${this.config.branchPrefix}${timestamp}-${hex}`;
     const projectName = basename(projectPath);
-    const worktreePath = join(this.config.basePath, `${projectName}-${hexId}`);
+    const worktreePath = join(this.config.basePath, `${projectName}-${hex}`);
 
     // Ensure base path exists
     await mkdir(this.config.basePath, { recursive: true });
@@ -86,154 +55,115 @@ export class WorktreeManager {
     // Create worktree
     await execFileAsync("git", ["worktree", "add", worktreePath, "-b", branchName], {
       cwd: projectPath,
-      timeout: 30_000,
     });
 
     return {
       branchName,
       path: worktreePath,
       projectPath,
-      createdAt: Date.now(),
+      createdAt: now,
     };
   }
 
-  /**
-   * Get a summary of changes in a worktree.
-   */
   async getSummary(info: WorktreeInfo): Promise<WorktreeSummary> {
-    // Get list of changed files
+    let filesChanged = 0;
+    let insertions = 0;
+    let deletions = 0;
     let files: string[] = [];
+
     try {
-      const { stdout } = await execFileAsync("git", ["diff", "HEAD", "--name-only"], {
+      const { stdout: statOutput } = await execFileAsync("git", ["diff", "HEAD", "--stat"], {
         cwd: info.path,
-        timeout: 10_000,
       });
-      files = stdout.trim().split("\n").filter(Boolean);
+
+      // Parse the summary line like "3 files changed, 10 insertions(+), 2 deletions(-)"
+      const summaryMatch = statOutput.match(
+        /(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/,
+      );
+      if (summaryMatch) {
+        filesChanged = parseInt(summaryMatch[1], 10) || 0;
+        insertions = parseInt(summaryMatch[2], 10) || 0;
+        deletions = parseInt(summaryMatch[3], 10) || 0;
+      }
     } catch {
       // No changes or git error
     }
 
-    // Get stat summary
-    let insertions = 0;
-    let deletions = 0;
     try {
-      const { stdout } = await execFileAsync("git", ["diff", "HEAD", "--stat"], {
+      const { stdout: nameOutput } = await execFileAsync("git", ["diff", "HEAD", "--name-only"], {
         cwd: info.path,
-        timeout: 10_000,
       });
-      // Parse the summary line: " N files changed, M insertions(+), K deletions(-)"
-      const summaryMatch = stdout.match(/(\d+) insertions?\(\+\).*?(\d+) deletions?\(-\)/);
-      if (summaryMatch) {
-        insertions = parseInt(summaryMatch[1], 10);
-        deletions = parseInt(summaryMatch[2], 10);
-      } else {
-        // Try insertions only or deletions only
-        const insMatch = stdout.match(/(\d+) insertions?\(\+\)/);
-        if (insMatch) insertions = parseInt(insMatch[1], 10);
-        const delMatch = stdout.match(/(\d+) deletions?\(-\)/);
-        if (delMatch) deletions = parseInt(delMatch[1], 10);
-      }
+      files = nameOutput.trim().split("\n").filter(Boolean);
     } catch {
-      // No stat info
-    }
-
-    // Also check for committed changes on the branch (not just uncommitted)
-    if (files.length === 0) {
-      try {
-        const { stdout } = await execFileAsync(
-          "git",
-          ["log", "--oneline", "--name-only", "HEAD@{upstream}..HEAD"],
-          { cwd: info.path, timeout: 10_000 },
-        );
-        const logFiles = stdout
-          .trim()
-          .split("\n")
-          .filter((line) => line && !line.match(/^[a-f0-9]+ /))
-          .filter(Boolean);
-        if (logFiles.length > 0) files = [...new Set(logFiles)];
-      } catch {
-        // No upstream or other error — try diffing against parent branch
-        try {
-          const branchBase = info.branchName.replace(this.config.branchPrefix, "");
-          // Find merge base with common ancestors
-          const { stdout: diffOutput } = await execFileAsync(
-            "git",
-            ["diff", "--name-only", "HEAD~1..HEAD"],
-            { cwd: info.path, timeout: 10_000 },
-          );
-          files = diffOutput.trim().split("\n").filter(Boolean);
-        } catch {
-          // Give up on finding committed files
-        }
-      }
+      // No changes or git error
     }
 
     return {
       branchName: info.branchName,
       path: info.path,
-      filesChanged: files.length,
+      filesChanged,
       insertions,
       deletions,
       files,
     };
   }
 
-  /**
-   * List active worktrees in the base path.
-   */
   async list(): Promise<WorktreeInfo[]> {
-    let items: string[];
+    const results: WorktreeInfo[] = [];
+
+    let entries;
     try {
-      items = await readdir(this.config.basePath);
+      entries = await readdir(this.config.basePath, { withFileTypes: true });
     } catch {
-      return [];
+      return results;
     }
 
-    const results: WorktreeInfo[] = [];
-    for (const item of items) {
-      const fullPath = join(this.config.basePath, item);
-      try {
-        const s = await stat(fullPath);
-        if (!s.isDirectory()) continue;
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
 
-        // Try to get branch name
-        const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-          cwd: fullPath,
-          timeout: 5000,
+      const worktreePath = join(this.config.basePath, entry.name);
+
+      // Verify it's a valid git worktree
+      try {
+        const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
+          cwd: worktreePath,
         });
-        const branchName = stdout.trim();
+        if (!stdout.trim()) continue;
+
+        // Get the branch name
+        const { stdout: branchOutput } = await execFileAsync(
+          "git",
+          ["rev-parse", "--abbrev-ref", "HEAD"],
+          { cwd: worktreePath },
+        );
 
         results.push({
-          branchName,
-          path: fullPath,
-          projectPath: "", // Unknown from listing alone
-          createdAt: s.mtimeMs,
+          branchName: branchOutput.trim(),
+          path: worktreePath,
+          projectPath: "", // Cannot reliably determine from worktree alone
+          createdAt: parseBranchTimestamp(branchOutput.trim(), this.config.branchPrefix),
         });
       } catch {
-        continue;
+        // Not a valid worktree, skip
       }
     }
 
     return results;
   }
 
-  /**
-   * Remove stale worktrees older than the configured threshold.
-   * Returns the number of worktrees removed.
-   */
   async cleanup(maxAgeHours?: number): Promise<number> {
-    const threshold = (maxAgeHours ?? this.config.cleanupAfterHours) * 60 * 60 * 1000;
-    const now = Date.now();
-    const trees = await this.list();
+    const threshold = maxAgeHours ?? this.config.cleanupAfterHours;
+    const cutoff = new Date(Date.now() - threshold * 60 * 60 * 1000);
+    const worktrees = await this.list();
     let removed = 0;
 
-    for (const tree of trees) {
-      if (now - tree.createdAt > threshold) {
+    for (const wt of worktrees) {
+      if (wt.createdAt < cutoff) {
         try {
-          await this.remove(tree.path);
+          await this.remove(wt.path);
           removed++;
         } catch {
-          // Skip if removal fails
+          // Skip worktrees that can't be removed
         }
       }
     }
@@ -241,92 +171,115 @@ export class WorktreeManager {
     return removed;
   }
 
-  /**
-   * Merge a worktree branch back to the parent branch, then clean up.
-   */
   async merge(branchName: string, targetBranch?: string): Promise<void> {
-    // Find the worktree with this branch
-    const trees = await this.list();
-    const tree = trees.find((t) => t.branchName === branchName);
+    const target = targetBranch ?? "main";
+    const worktrees = await this.list();
+    const wt = worktrees.find((w) => w.branchName === branchName);
 
-    if (!tree) {
-      throw new Error(`No worktree found for branch "${branchName}"`);
+    if (!wt) {
+      throw new Error(`Worktree with branch ${branchName} not found`);
     }
 
-    // Find the parent repo — it's the main worktree
-    let parentPath: string;
-    try {
-      const { stdout } = await execFileAsync("git", ["worktree", "list", "--porcelain"], {
-        cwd: tree.path,
-        timeout: 10_000,
-      });
-      // First worktree entry is the main one
-      const mainMatch = stdout.match(/^worktree (.+)$/m);
-      parentPath = mainMatch?.[1] ?? "";
-      if (!parentPath) throw new Error("Could not find main worktree");
-    } catch (err) {
-      throw new Error(
-        `Failed to find parent repo: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-
-    // Determine target branch
-    const target = targetBranch ?? (await this.getDefaultBranch(parentPath));
-
-    // Checkout target branch and merge
-    await execFileAsync("git", ["checkout", target], {
-      cwd: parentPath,
-      timeout: 10_000,
+    // Find the parent repo by going up from basePath
+    // We need to merge from a non-worktree directory
+    const { stdout: toplevel } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: wt.path,
     });
 
-    await execFileAsync("git", ["merge", branchName, "--no-edit"], {
-      cwd: parentPath,
-      timeout: 30_000,
+    // Get the main repo path (worktree's commondir)
+    const { stdout: commonDir } = await execFileAsync("git", ["rev-parse", "--git-common-dir"], {
+      cwd: wt.path,
+    });
+    const mainRepoGitDir = commonDir.trim();
+    // The repo root is the parent of .git
+    const mainRepoPath = join(mainRepoGitDir, "..");
+
+    await execFileAsync("git", ["checkout", target], { cwd: mainRepoPath });
+    await execFileAsync("git", ["merge", branchName], { cwd: mainRepoPath });
+
+    // Remove the worktree
+    await execFileAsync("git", ["worktree", "remove", wt.path], {
+      cwd: mainRepoPath,
     });
 
-    // Remove worktree
-    await this.remove(tree.path);
-
-    // Delete branch
-    try {
-      await execFileAsync("git", ["branch", "-d", branchName], {
-        cwd: parentPath,
-        timeout: 10_000,
-      });
-    } catch {
-      // Branch may already be gone
-    }
+    // Delete the branch
+    await execFileAsync("git", ["branch", "-d", branchName], {
+      cwd: mainRepoPath,
+    });
   }
 
-  /**
-   * Remove a specific worktree.
-   */
   async remove(worktreePath: string): Promise<void> {
+    // Find the main repo
+    const { stdout: commonDir } = await execFileAsync("git", ["rev-parse", "--git-common-dir"], {
+      cwd: worktreePath,
+    });
+    const mainRepoPath = join(commonDir.trim(), "..");
+
+    // Get branch name before removing
+    const { stdout: branchOutput } = await execFileAsync(
+      "git",
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      { cwd: worktreePath },
+    );
+    const branchName = branchOutput.trim();
+
+    await execFileAsync("git", ["worktree", "remove", worktreePath, "--force"], {
+      cwd: mainRepoPath,
+    });
+
+    // Try to delete the branch too
     try {
-      // Try git worktree remove first
-      await execFileAsync("git", ["worktree", "remove", worktreePath, "--force"], {
-        timeout: 15_000,
+      await execFileAsync("git", ["branch", "-D", branchName], {
+        cwd: mainRepoPath,
       });
     } catch {
-      // Fallback: just remove the directory
-      try {
-        await rm(worktreePath, { recursive: true, force: true });
-      } catch {
-        // Best effort
-      }
+      // Branch may already be deleted or protected
     }
   }
 
-  /** Get the default branch of a repository. */
-  private async getDefaultBranch(repoPath: string): Promise<string> {
-    try {
-      const { stdout } = await execFileAsync("git", ["symbolic-ref", "--short", "HEAD"], {
-        cwd: repoPath,
-        timeout: 5000,
-      });
-      return stdout.trim() || "main";
-    } catch {
-      return "main";
+  shouldUseWorktree(useWorktreeParam: boolean | undefined, isGitRepo: boolean): boolean {
+    // Explicit parameter overrides config
+    if (useWorktreeParam !== undefined) return useWorktreeParam && isGitRepo;
+
+    switch (this.config.mode) {
+      case "off":
+        return false;
+      case "auto":
+        return isGitRepo;
+      case "opt-in":
+        return false; // Only use when explicitly requested
+      default:
+        return false;
     }
   }
+}
+
+function formatTimestamp(date: Date): string {
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${y}${mo}${d}-${h}${mi}${s}`;
+}
+
+function parseBranchTimestamp(branchName: string, prefix: string): Date {
+  // Branch format: {prefix}{YYYYMMDD}-{HHMMSS}-{hex}
+  const withoutPrefix = branchName.startsWith(prefix)
+    ? branchName.slice(prefix.length)
+    : branchName;
+
+  const match = withoutPrefix.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+  if (!match) return new Date(0);
+
+  const [, year, month, day, hour, minute, second] = match;
+  return new Date(
+    parseInt(year, 10),
+    parseInt(month, 10) - 1,
+    parseInt(day, 10),
+    parseInt(hour, 10),
+    parseInt(minute, 10),
+    parseInt(second, 10),
+  );
 }

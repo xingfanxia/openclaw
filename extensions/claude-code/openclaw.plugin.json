@@ -1,0 +1,132 @@
+{
+  "id": "claude-code",
+  "name": "Coding Agents",
+  "description": "Run Claude Code and Codex sessions via their SDKs for programmatic coding tasks.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "workspaceDir": {
+        "type": "string",
+        "description": "Default working directory for coding tasks."
+      },
+      "maxBudgetUsd": {
+        "type": "number",
+        "description": "Maximum budget in USD per Claude Code task."
+      },
+      "maxTurns": {
+        "type": "number",
+        "description": "Maximum conversation turns per Claude Code task."
+      },
+      "permissionMode": {
+        "type": "string",
+        "enum": ["default", "acceptEdits", "bypassPermissions"],
+        "description": "Permission mode for Claude Code sessions."
+      },
+      "model": {
+        "type": "string",
+        "description": "Default Claude model (e.g. claude-sonnet-4-5-20250929)."
+      },
+      "timeoutMs": {
+        "type": "number",
+        "description": "Timeout in milliseconds per task."
+      },
+      "codex": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Codex-specific configuration.",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Codex model (e.g. gpt-5.2-codex, codex-mini)."
+          },
+          "approvalPolicy": {
+            "type": "string",
+            "enum": ["never", "on-request", "on-failure", "untrusted"],
+            "description": "Approval mode for Codex sessions."
+          },
+          "sandboxMode": {
+            "type": "string",
+            "enum": ["read-only", "workspace-write", "danger-full-access"],
+            "description": "Sandbox mode for Codex sessions."
+          }
+        }
+      },
+      "claudeConfigPath": {
+        "type": "string",
+        "description": "Path to ~/.claude config directory inside container."
+      },
+      "projects": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "autoScan": {
+            "type": "boolean",
+            "description": "Auto-scan for projects on startup."
+          },
+          "scanPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Directories to scan for projects."
+          },
+          "scanDepth": {
+            "type": "number",
+            "description": "How many directory levels deep to scan."
+          },
+          "overrides": {
+            "type": "array",
+            "description": "Manual project entries or overrides.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "keywords": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "language": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "worktree": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["off", "auto", "opt-in"],
+            "description": "Worktree mode."
+          },
+          "basePath": {
+            "type": "string",
+            "description": "Base directory for worktrees."
+          },
+          "cleanupAfterHours": {
+            "type": "number",
+            "description": "Auto-cleanup threshold in hours."
+          },
+          "branchPrefix": {
+            "type": "string",
+            "description": "Branch name prefix for worktrees."
+          }
+        }
+      }
+    }
+  }
+}

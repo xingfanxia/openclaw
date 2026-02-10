@@ -8,9 +8,12 @@ services:
       SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      VERCEL_TOKEN: ${VERCEL_TOKEN:-}
     volumes:
       - ${HOME}/projects:/home/node/projects
       - ${HOME}/obsidian-vault:/home/node/obsidian-vault
+      - ${HOME}/.claude:/home/node/.claude:ro
+      - ${HOME}/.config/gh:/home/node/.config/gh:ro
 
   openclaw-cli:
     environment:
