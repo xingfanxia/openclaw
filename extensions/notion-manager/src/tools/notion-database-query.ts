@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
 import type { NotionConfig } from "../types.js";
 import { queryDatabase } from "../notion-client.js";
+import { resolveAccount } from "../types.js";
 
 export function createNotionDatabaseQueryTool(config: NotionConfig): AnyAgentTool {
   return {
@@ -30,6 +31,11 @@ export function createNotionDatabaseQueryTool(config: NotionConfig): AnyAgentToo
           default: 50,
         }),
       ),
+      account_id: Type.Optional(
+        Type.String({
+          description: "Account to use (e.g. 'work', 'personal'). Defaults to work account.",
+        }),
+      ),
     }),
     execute: async (
       _toolCallId: string,
@@ -38,10 +44,12 @@ export function createNotionDatabaseQueryTool(config: NotionConfig): AnyAgentToo
         filter?: Record<string, unknown>;
         sort?: Array<Record<string, unknown>>;
         max_results?: number;
+        account_id?: string;
       },
     ) => {
+      const account = resolveAccount(params.account_id, config);
       const pages = await queryDatabase(
-        config,
+        account.integrationToken,
         params.database_id,
         params.filter,
         params.sort,
@@ -49,6 +57,7 @@ export function createNotionDatabaseQueryTool(config: NotionConfig): AnyAgentToo
       );
 
       const result = {
+        account: account.id,
         databaseId: params.database_id,
         resultCount: pages.length,
         pages: pages.map((p) => ({

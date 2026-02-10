@@ -11,7 +11,24 @@ import { createNotionSearchTool } from "./src/tools/notion-search.js";
 import { createNotionUpdateTool } from "./src/tools/notion-update.js";
 
 export default function register(api: OpenClawPluginApi): void {
-  const config = (api.pluginConfig ?? {}) as NotionConfig;
+  const raw = (api.pluginConfig ?? {}) as Record<string, unknown>;
+
+  // Build config with defaults
+  const config: NotionConfig = {
+    accounts: (raw.accounts ?? []) as NotionConfig["accounts"],
+    defaultAccount: (raw.defaultAccount ?? "") as string,
+    accountAliases: (raw.accountAliases ?? {}) as Record<string, string>,
+  };
+
+  // Validate at least one account exists
+  if (config.accounts.length === 0) {
+    console.warn("[notion-manager] No accounts configured. Add accounts to plugin config.");
+  }
+
+  // Default to first account if defaultAccount not set
+  if (!config.defaultAccount && config.accounts.length > 0) {
+    config.defaultAccount = config.accounts[0].id;
+  }
 
   // Register 8 tools
   api.registerTool(createNotionSearchTool(config));
@@ -27,14 +44,15 @@ export default function register(api: OpenClawPluginApi): void {
   api.registerCommand({
     name: "notion_status",
     acceptsArgs: false,
-    description: "Test Notion connection and show workspace info",
+    description: "Test Notion connection and show workspace info for all accounts",
     handler: async () => {
       const text = await getNotionStatus(config);
       return { text };
     },
   });
 
+  const accountNames = config.accounts.map((a) => a.id).join(", ");
   console.log(
-    `[notion-manager] Registered: 8 tools, 1 command (workspace: ${config.defaultWorkspace ?? "default"})`,
+    `[notion-manager] Registered: 8 tools, 1 command (accounts: ${accountNames || "none"}, default: ${config.defaultAccount || "none"})`,
   );
 }

@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
 import type { NotionConfig } from "../types.js";
 import { searchNotion } from "../notion-client.js";
+import { resolveAccount } from "../types.js";
 
 export function createNotionSearchTool(config: NotionConfig): AnyAgentTool {
   return {
@@ -17,14 +18,26 @@ export function createNotionSearchTool(config: NotionConfig): AnyAgentTool {
           description: "Filter results to only pages or only databases. Omit to search both.",
         }),
       ),
+      account_id: Type.Optional(
+        Type.String({
+          description: "Account to use (e.g. 'work', 'personal'). Defaults to work account.",
+        }),
+      ),
     }),
     execute: async (
       _toolCallId: string,
-      params: { query: string; filter_type?: "page" | "database" },
+      params: { query: string; filter_type?: "page" | "database"; account_id?: string },
     ) => {
-      const results = await searchNotion(config, params.query, params.filter_type);
+      const account = resolveAccount(params.account_id, config);
+      const results = await searchNotion(
+        account.integrationToken,
+        params.query,
+        params.filter_type,
+      );
       const result = {
         query: params.query,
+        account: account.id,
+        workspace: account.workspace ?? account.id,
         resultCount: results.length,
         results: results.map((r) => ({
           id: r.id,

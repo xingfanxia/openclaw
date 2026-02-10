@@ -1,25 +1,20 @@
 import { Client } from "@notionhq/client";
-import type {
-  NotionConfig,
-  NotionPage,
-  NotionDatabase,
-  NotionBlock,
-  NotionComment,
-} from "./types.js";
+import type { NotionPage, NotionDatabase, NotionComment } from "./types.js";
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 400;
 
-let client: Client | null = null;
+// Cache clients by integration token to avoid creating new instances per call
+const clientCache = new Map<string, Client>();
 
-export function getClient(config: NotionConfig): Client {
+export function getClient(integrationToken: string): Client {
+  if (!integrationToken) {
+    throw new Error("Notion integration token not provided. Check account configuration.");
+  }
+  let client = clientCache.get(integrationToken);
   if (!client) {
-    if (!config.integrationToken) {
-      throw new Error(
-        "Notion integration token not configured. Set integrationToken in plugin config.",
-      );
-    }
-    client = new Client({ auth: config.integrationToken });
+    client = new Client({ auth: integrationToken });
+    clientCache.set(integrationToken, client);
   }
   return client;
 }
@@ -226,12 +221,12 @@ export function textToBlocks(content: string): NotionBlockInput[] {
 // --- Page reading with recursive children ---
 
 export async function readPageBlocks(
-  config: NotionConfig,
+  integrationToken: string,
   pageId: string,
   depth: number = 0,
   maxDepth: number = 3,
 ): Promise<string[]> {
-  const notion = getClient(config);
+  const notion = getClient(integrationToken);
   const lines: string[] = [];
   let cursor: string | undefined;
 
@@ -252,7 +247,12 @@ export async function readPageBlocks(
         lines.push(indent + text);
       }
       if ((b.has_children as boolean) && depth < maxDepth) {
-        const childLines = await readPageBlocks(config, b.id as string, depth + 1, maxDepth);
+        const childLines = await readPageBlocks(
+          integrationToken,
+          b.id as string,
+          depth + 1,
+          maxDepth,
+        );
         lines.push(...childLines);
       }
     }
@@ -266,11 +266,11 @@ export async function readPageBlocks(
 // --- Search ---
 
 export async function searchNotion(
-  config: NotionConfig,
+  integrationToken: string,
   query: string,
   filterType?: "page" | "database",
 ): Promise<Array<NotionPage | NotionDatabase>> {
-  const notion = getClient(config);
+  const notion = getClient(integrationToken);
   const params: Record<string, unknown> = {
     query,
     page_size: 20,
@@ -346,14 +346,14 @@ function parseSearchResult(result: Record<string, unknown>): NotionPage | Notion
 // --- Create page ---
 
 export async function createPage(
-  config: NotionConfig,
+  integrationToken: string,
   parentId: string,
   title: string,
   content?: string,
   properties?: Record<string, unknown>,
   parentType?: "database_id" | "page_id",
 ): Promise<NotionPage> {
-  const notion = getClient(config);
+  const notion = getClient(integrationToken);
 
   const parent: Record<string, string> =
     parentType === "page_id" ? { page_id: parentId } : { database_id: parentId };
@@ -408,12 +408,12 @@ export async function createPage(
 // --- Update page ---
 
 export async function updatePage(
-  config: NotionConfig,
+  integrationToken: string,
   pageId: string,
   properties?: Record<string, unknown>,
   archived?: boolean,
 ): Promise<NotionPage> {
-  const notion = getClient(config);
+  const notion = getClient(integrationToken);
   const params: Record<string, unknown> = { page_id: pageId };
   if (properties) params.properties = properties;
   if (archived !== undefined) params.archived = archived;
@@ -441,20 +441,20 @@ export async function updatePage(
 
 // --- List databases ---
 
-export async function listDatabases(config: NotionConfig): Promise<NotionDatabase[]> {
-  return (await searchNotion(config, "", "database")) as NotionDatabase[];
+export async function listDatabases(integrationToken: string): Promise<NotionDatabase[]> {
+  return (await searchNotion(integrationToken, "", "database")) as NotionDatabase[];
 }
 
 // --- Query database ---
 
 export async function queryDatabase(
-  config: NotionConfig,
+  integrationToken: string,
   databaseId: string,
   filter?: Record<string, unknown>,
   sorts?: Array<Record<string, unknown>>,
   maxResults: number = 50,
 ): Promise<NotionPage[]> {
-  const notion = getClient(config);
+  const notion = getClient(integrationToken);
   const params: Record<string, unknown> = {
     database_id: databaseId,
     page_size: Math.min(maxResults, 100),
@@ -486,8 +486,11 @@ export async function queryDatabase(
 
 // --- Comments ---
 
-export async function getComments(config: NotionConfig, pageId: string): Promise<NotionComment[]> {
-  const notion = getClient(config);
+export async function getComments(
+  integrationToken: string,
+  pageId: string,
+): Promise<NotionComment[]> {
+  const notion = getClient(integrationToken);
   const response = await withRetry(() => notion.comments.list({ block_id: pageId }));
 
   return response.results.map((c) => {
@@ -504,11 +507,11 @@ export async function getComments(config: NotionConfig, pageId: string): Promise
 }
 
 export async function addComment(
-  config: NotionConfig,
+  integrationToken: string,
   pageId: string,
   text: string,
 ): Promise<NotionComment> {
-  const notion = getClient(config);
+  const notion = getClient(integrationToken);
   const response = await withRetry(() =>
     notion.comments.create({
       parent: { page_id: pageId },
@@ -530,11 +533,11 @@ export async function addComment(
 // --- Append blocks ---
 
 export async function appendBlocks(
-  config: NotionConfig,
+  integrationToken: string,
   pageId: string,
   content: string,
 ): Promise<{ blocksAdded: number }> {
-  const notion = getClient(config);
+  const notion = getClient(integrationToken);
   const blocks = textToBlocks(content);
 
   // Notion API limits to 100 blocks per request
@@ -560,9 +563,10 @@ export async function appendBlocks(
 // --- Get workspace info (for status command) ---
 
 export async function getWorkspaceInfo(
-  config: NotionConfig,
+  integrationToken: string,
+  workspaceName?: string,
 ): Promise<{ botName: string; workspaceName: string; workspaceId: string }> {
-  const notion = getClient(config);
+  const notion = getClient(integrationToken);
   const me = await withRetry(() => notion.users.me({}));
   const bot = me as unknown as Record<string, unknown>;
   const botInfo = bot.bot as Record<string, unknown> | undefined;
@@ -570,7 +574,7 @@ export async function getWorkspaceInfo(
 
   return {
     botName: (bot.name ?? "Unknown") as string,
-    workspaceName: workspace ?? config.defaultWorkspace ?? "Unknown",
+    workspaceName: workspace ?? workspaceName ?? "Unknown",
     workspaceId: ((botInfo?.owner as Record<string, unknown>)?.workspace as string) ?? "unknown",
   };
 }

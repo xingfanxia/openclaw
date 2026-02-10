@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
 import type { NotionConfig } from "../types.js";
 import { readPageBlocks, getClient } from "../notion-client.js";
+import { resolveAccount } from "../types.js";
 
 export function createNotionReadTool(config: NotionConfig): AnyAgentTool {
   return {
@@ -12,9 +13,16 @@ export function createNotionReadTool(config: NotionConfig): AnyAgentTool {
       page_id: Type.String({
         description: "The Notion page ID to read (UUID format, with or without dashes)",
       }),
+      account_id: Type.Optional(
+        Type.String({
+          description: "Account to use (e.g. 'work', 'personal'). Defaults to work account.",
+        }),
+      ),
     }),
-    execute: async (_toolCallId: string, params: { page_id: string }) => {
-      const notion = getClient(config);
+    execute: async (_toolCallId: string, params: { page_id: string; account_id?: string }) => {
+      const account = resolveAccount(params.account_id, config);
+      const token = account.integrationToken;
+      const notion = getClient(token);
 
       // Get page metadata
       const page = await notion.pages.retrieve({ page_id: params.page_id });
@@ -35,10 +43,11 @@ export function createNotionReadTool(config: NotionConfig): AnyAgentTool {
       }
 
       // Read all blocks
-      const lines = await readPageBlocks(config, params.page_id);
+      const lines = await readPageBlocks(token, params.page_id);
 
       const result = {
         pageId: params.page_id,
+        account: account.id,
         title,
         url: p.url as string,
         lastEdited: p.last_edited_time as string,

@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
 import type { NotionConfig } from "../types.js";
 import { updatePage } from "../notion-client.js";
+import { resolveAccount } from "../types.js";
 
 export function createNotionUpdateTool(config: NotionConfig): AnyAgentTool {
   return {
@@ -22,6 +23,11 @@ export function createNotionUpdateTool(config: NotionConfig): AnyAgentTool {
           description: "Set to true to archive the page, false to unarchive",
         }),
       ),
+      account_id: Type.Optional(
+        Type.String({
+          description: "Account to use (e.g. 'work', 'personal'). Defaults to work account.",
+        }),
+      ),
     }),
     execute: async (
       _toolCallId: string,
@@ -29,12 +35,20 @@ export function createNotionUpdateTool(config: NotionConfig): AnyAgentTool {
         page_id: string;
         properties?: Record<string, unknown>;
         archived?: boolean;
+        account_id?: string;
       },
     ) => {
-      const page = await updatePage(config, params.page_id, params.properties, params.archived);
+      const account = resolveAccount(params.account_id, config);
+      const page = await updatePage(
+        account.integrationToken,
+        params.page_id,
+        params.properties,
+        params.archived,
+      );
 
       const result = {
         updated: true,
+        account: account.id,
         pageId: page.id,
         title: page.title,
         url: page.url,

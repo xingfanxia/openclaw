@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
 import type { NotionConfig } from "../types.js";
 import { createPage } from "../notion-client.js";
+import { resolveAccount } from "../types.js";
 
 export function createNotionCreateTool(config: NotionConfig): AnyAgentTool {
   return {
@@ -32,6 +33,11 @@ export function createNotionCreateTool(config: NotionConfig): AnyAgentTool {
             "Database properties to set (for database parents). Use Notion property format.",
         }),
       ),
+      account_id: Type.Optional(
+        Type.String({
+          description: "Account to use (e.g. 'work', 'personal'). Defaults to work account.",
+        }),
+      ),
     }),
     execute: async (
       _toolCallId: string,
@@ -41,11 +47,13 @@ export function createNotionCreateTool(config: NotionConfig): AnyAgentTool {
         content?: string;
         parent_type?: "database_id" | "page_id";
         properties?: Record<string, unknown>;
+        account_id?: string;
       },
     ) => {
+      const account = resolveAccount(params.account_id, config);
       const parentType = params.parent_type ?? "database_id";
       const page = await createPage(
-        config,
+        account.integrationToken,
         params.parent_id,
         params.title,
         params.content,
@@ -55,6 +63,7 @@ export function createNotionCreateTool(config: NotionConfig): AnyAgentTool {
 
       const result = {
         created: true,
+        account: account.id,
         pageId: page.id,
         title: page.title,
         url: page.url,

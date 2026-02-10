@@ -1,18 +1,38 @@
 {
   "id": "notion-manager",
   "name": "Notion Manager",
-  "description": "Notion workspace management with search, read, create, update, and database operations via Notion API.",
+  "description": "Notion workspace management with search, read, create, update, and database operations via Notion API. Supports multiple Notion accounts (e.g. work + personal).",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "integrationToken": {
-        "type": "string",
-        "description": "Notion internal integration token (starts with ntn_ or secret_)"
+      "accounts": {
+        "type": "array",
+        "description": "Notion accounts with integration tokens.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Unique account identifier (e.g. 'work', 'personal')"
+            },
+            "integrationToken": {
+              "type": "string",
+              "description": "Notion internal integration token (starts with ntn_ or secret_)"
+            },
+            "workspace": { "type": "string", "description": "Workspace name for display purposes" }
+          },
+          "required": ["id", "integrationToken"]
+        }
       },
-      "defaultWorkspace": {
+      "defaultAccount": {
         "type": "string",
-        "description": "Default workspace name for display purposes"
+        "description": "Default account ID to use when none specified."
+      },
+      "accountAliases": {
+        "type": "object",
+        "description": "Friendly aliases for account IDs (e.g., {\"work\": \"work\", \"personal\": \"personal\"}).",
+        "additionalProperties": { "type": "string" }
       }
     }
   }
