@@ -9,6 +9,8 @@ services:
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       VERCEL_TOKEN: ${VERCEL_TOKEN:-}
+      GOOGLE_CLOUD_PROJECT: ax-devbox
+      GOOGLE_CLOUD_LOCATION: us-east5
     volumes:
       - ${HOME}/projects:/home/node/projects
       - ${HOME}/obsidian-vault:/home/node/obsidian-vault

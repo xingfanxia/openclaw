@@ -22,6 +22,11 @@ import {
   buildTogetherModelDefinition,
 } from "./together-models.js";
 import { discoverVeniceModels, VENICE_BASE_URL } from "./venice-models.js";
+import {
+  buildVertexAnthropicProvider,
+  isVertexAnthropicAvailable,
+  registerVertexAnthropicApi,
+} from "./vertex-anthropic-provider.js";
 
 type ModelsConfig = NonNullable<OpenClawConfig["models"]>;
 export type ProviderConfig = NonNullable<ModelsConfig["providers"]>[string];
@@ -588,6 +593,19 @@ export async function resolveImplicitProviders(params: {
     providers.qianfan = { ...buildQianfanProvider(), apiKey: qianfanKey };
   }
 
+  // Vertex AI Anthropic (Claude on GCP)
+  if (isVertexAnthropicAvailable()) {
+    registerVertexAnthropicApi();
+    try {
+      const vertexProvider = buildVertexAnthropicProvider();
+      providers["vertex-anthropic"] = {
+        ...vertexProvider,
+        apiKey: "gcloud-adc",
+      } as any;
+    } catch {
+      // Missing GOOGLE_CLOUD_PROJECT or GOOGLE_CLOUD_LOCATION — skip
+    }
+  }
   return providers;
 }
 

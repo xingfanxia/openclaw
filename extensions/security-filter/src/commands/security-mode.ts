@@ -1,5 +1,5 @@
-import type { Redactor, SecurityMode } from "../redactor.js";
 import type { AuditLog } from "../audit-log.js";
+import type { Redactor, SecurityMode } from "../redactor.js";
 
 interface CommandContext {
   senderId: string;
@@ -27,7 +27,7 @@ export function createSecurityModeCommand(
         text:
           "Current security mode: " +
           currentMode +
-          "\n\nUsage: /security-mode <strict|normal|permissive>\n\n" +
+          "\n\nUsage: /security_mode <strict|normal|permissive>\n\n" +
           "Modes:\n" +
           "  strict     - Block entire message if secrets detected (default)\n" +
           "  normal     - Redact secrets with [REDACTED:Pattern Name]\n" +
@@ -37,11 +37,7 @@ export function createSecurityModeCommand(
 
     if (!VALID_MODES.includes(requestedMode as SecurityMode)) {
       return {
-        text:
-          "Invalid mode: " +
-          requestedMode +
-          ". Valid modes: " +
-          VALID_MODES.join(", "),
+        text: "Invalid mode: " + requestedMode + ". Valid modes: " + VALID_MODES.join(", "),
       };
     }
 
@@ -58,11 +54,7 @@ export function createSecurityModeCommand(
     );
 
     return {
-      text:
-        "Security mode changed: " +
-        previousMode +
-        " -> " +
-        newMode,
+      text: "Security mode changed: " + previousMode + " -> " + newMode,
     };
   };
 }
