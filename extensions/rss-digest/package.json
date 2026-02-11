@@ -1,0 +1,13 @@
+{
+  "name": "@openclaw/rss-digest",
+  "version": "1.0.0",
+  "type": "module",
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

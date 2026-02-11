@@ -1,0 +1,23 @@
+{
+  "id": "selfie",
+  "name": "Selfie Generator",
+  "description": "Generate selfie images using Gemini image generation models.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "geminiApiKey": {
+        "type": "string",
+        "description": "Gemini API key. Falls back to GEMINI_API_KEY env var."
+      },
+      "model": {
+        "type": "string",
+        "description": "Default Gemini model for image generation. Default: gemini-2.5-flash-image"
+      },
+      "outputDir": {
+        "type": "string",
+        "description": "Directory to save generated images. Default: /tmp/openclaw-selfies"
+      }
+    }
+  }
+}
