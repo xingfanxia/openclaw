@@ -8,6 +8,7 @@ type PluginCfg = {
   timeoutMs?: number;
   codex?: {
     model?: string;
+    reasoningEffort?: string;
     approvalPolicy?: string;
     sandboxMode?: string;
   };
@@ -39,6 +40,12 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
       model: Type.Optional(
         Type.String({
           description: "Model override (e.g. gpt-5.2-codex, codex-mini).",
+        }),
+      ),
+      reasoningEffort: Type.Optional(
+        Type.String({
+          description:
+            "Reasoning effort: minimal, low, medium, high, or xhigh. Defaults to config value.",
         }),
       ),
       sandboxMode: Type.Optional(
@@ -87,6 +94,11 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
         codexCfg.sandboxMode ||
         "danger-full-access";
 
+      const reasoningEffort =
+        (typeof params.reasoningEffort === "string" && params.reasoningEffort.trim()) ||
+        codexCfg.reasoningEffort ||
+        undefined;
+
       const approvalPolicy = codexCfg.approvalPolicy ?? "never";
 
       // Dynamic import — the SDK may not be installed in all environments
@@ -112,6 +124,16 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
           approvalPolicy: approvalPolicy as "never" | "on-request" | "on-failure" | "untrusted",
           sandboxMode: sandboxMode as "read-only" | "workspace-write" | "danger-full-access",
           ...(model ? { model } : {}),
+          ...(reasoningEffort
+            ? {
+                modelReasoningEffort: reasoningEffort as
+                  | "minimal"
+                  | "low"
+                  | "medium"
+                  | "high"
+                  | "xhigh",
+              }
+            : {}),
         });
 
         const startTime = Date.now();

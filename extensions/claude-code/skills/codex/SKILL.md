@@ -40,15 +40,18 @@ Both tools do similar work. Use the one the user requests. If they don't specify
 }
 ```
 
-### With model override
+### With model and reasoning effort
 
 ```json
 {
   "task": "Refactor the database layer to use connection pooling",
   "workingDirectory": "/home/node/projects/api",
-  "model": "codex-mini"
+  "model": "gpt-5.3-codex",
+  "reasoningEffort": "high"
 }
 ```
+
+Reasoning effort levels: `minimal`, `low`, `medium`, `high`, `xhigh`. Defaults to config value (`high`).
 
 ### Read-only (sandbox)
 
