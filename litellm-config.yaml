@@ -4,6 +4,9 @@ model_list:
       model: vertex_ai/claude-opus-4-6
       vertex_project: ax-devbox
       vertex_location: us-east5
+      cache_control_injection_points:
+        - location: message
+          role: system
 
 litellm_settings:
   drop_params: true
