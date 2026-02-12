@@ -26,6 +26,7 @@ COPY extensions/calendar-manager/package.json ./extensions/calendar-manager/pack
 COPY extensions/drive-manager/package.json ./extensions/drive-manager/package.json
 COPY extensions/notion-manager/package.json ./extensions/notion-manager/package.json
 COPY extensions/obsidian-manager/package.json ./extensions/obsidian-manager/package.json
+COPY extensions/yt-downloader/package.json ./extensions/yt-downloader/package.json
 COPY patches ./patches
 COPY scripts ./scripts
 
@@ -45,6 +46,12 @@ ENV NODE_ENV=production
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/*
+
+# yt-dlp + ffmpeg (needed by yt-downloader extension)
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g @anthropic-ai/claude-code @openai/codex vercel
 

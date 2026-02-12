@@ -303,6 +303,32 @@ export async function uploadFile(
   return parseFile(res.data);
 }
 
+export async function uploadFileFromPath(
+  config: OAuthConfig,
+  accountId: string,
+  localPath: string,
+  name: string,
+  mimeType: string,
+  folderId?: string,
+): Promise<DriveFile> {
+  await ensureFreshToken(config, accountId);
+  const drive = getDriveClient(config, accountId);
+
+  const res = await drive.files.create({
+    requestBody: {
+      name,
+      parents: folderId ? [folderId] : undefined,
+    },
+    media: {
+      mimeType,
+      body: fs.createReadStream(localPath),
+    },
+    fields: FILE_FIELDS,
+  });
+
+  return parseFile(res.data);
+}
+
 export async function updateFile(
   config: OAuthConfig,
   accountId: string,

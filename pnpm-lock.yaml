@@ -635,6 +635,12 @@ importers:
         specifier: workspace:*
         version: link:../..
 
+  extensions/yt-downloader:
+    devDependencies:
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
   extensions/zalo:
     dependencies:
       undici:

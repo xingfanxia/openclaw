@@ -1,30 +1,31 @@
 # Session Handoff
 
-**Last Updated:** 2026-02-12 07:49:10
-**Trigger:** context-85pct-147942
+**Last Updated:** 2026-02-12 12:16:00
+**Trigger:** context-70pct-115339
 **Session ID:** default
 
 ## Git State
 
 - **Directory:** /home/x_computelabs_ai/openclaw
 - **Branch:** main
-- **Status:** 4 uncommitted changes
-- **Last Commit:** b79e34679 feat: replace vertex-anthropic runtime patches with LiteLLM proxy
+- **Status:** 5 uncommitted changes
+- **Last Commit:** 9fec48217 chore: update to latest upstream, fix build and patch filenames
 
 ### Modified Files
 
-- ocker-compose.override.yml
-- docs/feishu-integration.md
-- fix-openclaw-perms.sh
-- handoffs/
+- ockerfile
+- extensions/drive-manager/src/drive-client.ts
+- handoffs/HANDOFF.md
+- pnpm-lock.yaml
+- extensions/yt-downloader/
 
 ### Recent Commits
 
-- b79e34679 feat: replace vertex-anthropic runtime patches with LiteLLM proxy
-- e88b2beb3 feat: add selfie, rss-digest extensions and runtime patches
-- 8cccb2996 feat: add OpenAI Codex OAuth login script for ChatGPT subscription models
-- 04affa17a feat: add vertex-anthropic provider, gmail, calendar, cost-tracker extensions
-- 27b009cf5 feat: add claude-code extension with config sharing, project registry, worktree management
+- 9fec48217 chore: update to latest upstream, fix build and patch filenames
+- 5dd42d270 feat: add Feishu integration with community plugin and bug tracker agent
+- 0e026b679 feat: replace vertex-anthropic runtime patches with LiteLLM proxy
+- c063c3c7d feat: add selfie, rss-digest extensions and runtime patches
+- 4971ff8c7 feat: add OpenAI Codex OAuth login script for ChatGPT subscription models
 
 ---
 

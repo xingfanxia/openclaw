@@ -1,0 +1,47 @@
+{
+  "id": "yt-downloader",
+  "name": "YouTube/Video Downloader",
+  "description": "Download videos from YouTube, Bilibili, and other sites using yt-dlp, then upload to Google Drive.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "accounts": {
+        "type": "array",
+        "description": "Google accounts with Drive access (shared with drive-manager).",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "email": { "type": "string" },
+            "type": { "type": "string", "enum": ["workspace", "personal"] }
+          },
+          "required": ["id", "email", "type"]
+        }
+      },
+      "oauth": {
+        "type": "object",
+        "description": "Google OAuth2 configuration (shared with drive-manager).",
+        "properties": {
+          "clientId": { "type": "string" },
+          "clientSecret": { "type": "string" },
+          "redirectUri": { "type": "string" }
+        },
+        "required": ["clientId", "clientSecret", "redirectUri"]
+      },
+      "defaultAccount": {
+        "type": "string",
+        "description": "Default account ID to use when none specified."
+      },
+      "accountAliases": {
+        "type": "object",
+        "description": "Friendly aliases for account IDs.",
+        "additionalProperties": { "type": "string" }
+      },
+      "cookiesFile": {
+        "type": "string",
+        "description": "Path to cookies.txt file for authenticated downloads. Default: ~/.openclaw/cookies.txt"
+      }
+    }
+  }
+}
