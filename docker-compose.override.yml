@@ -16,7 +16,8 @@ services:
     volumes:
       - ${HOME}/projects:/home/node/projects
       - ${HOME}/obsidian-vault:/home/node/obsidian-vault
-      - ${HOME}/.claude:/home/node/.claude
+      # Claude credentials only (file mount, read-only) — don't mount full dir (uid mismatch breaks host)
+      # Credential file is already mounted in docker-compose.yml
       - ${HOME}/.config/gh:/home/node/.config/gh:ro
       - ${HOME}/.gitconfig-openclaw:/home/node/.gitconfig:ro
 

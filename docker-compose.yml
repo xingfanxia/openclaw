@@ -11,8 +11,9 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
-      - ${CLAUDE_CONFIG_DIR:-~/.claude}:/home/node/.claude
-      - ${CODEX_CONFIG_DIR:-~/.codex}:/home/node/.codex
+      - ${CLAUDE_CREDENTIALS:-~/.claude/.credentials.json}:/home/node/.claude/.credentials.json:ro
+      - ${CODEX_CONFIG:-~/.codex/config.toml}:/home/node/.codex/config.toml:ro
+      - ${CODEX_AUTH:-~/.codex/auth.json}:/home/node/.codex/auth.json:ro
       - ${GITCONFIG_OPENCLAW:-~/.gitconfig-openclaw}:/home/node/.gitconfig:ro
       - ${PROJECTS_DIR:-~/projects}:/home/node/projects
     ports:
@@ -44,8 +45,9 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
-      - ${CLAUDE_CONFIG_DIR:-~/.claude}:/home/node/.claude
-      - ${CODEX_CONFIG_DIR:-~/.codex}:/home/node/.codex
+      - ${CLAUDE_CREDENTIALS:-~/.claude/.credentials.json}:/home/node/.claude/.credentials.json:ro
+      - ${CODEX_CONFIG:-~/.codex/config.toml}:/home/node/.codex/config.toml:ro
+      - ${CODEX_AUTH:-~/.codex/auth.json}:/home/node/.codex/auth.json:ro
       - ${GITCONFIG_OPENCLAW:-~/.gitconfig-openclaw}:/home/node/.gitconfig:ro
       - ${PROJECTS_DIR:-~/projects}:/home/node/projects
     stdin_open: true

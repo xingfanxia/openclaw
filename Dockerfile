@@ -63,6 +63,12 @@ RUN ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk /app/node_m
 # Allow non-root user to write temp files during runtime/tests.
 RUN chown -R node:node /app
 
+# Pre-create writable dirs for Claude Code and Codex CLIs.
+# Credential files are bind-mounted read-only at runtime; these dirs
+# let the CLIs write session data, caches, and skills.
+RUN mkdir -p /home/node/.claude /home/node/.codex \
+    && chown -R node:node /home/node/.claude /home/node/.codex
+
 # Security hardening: Run as non-root user
 # The node:22-bookworm image includes a 'node' user (uid 1000)
 # This reduces the attack surface by preventing container escape via root privileges
