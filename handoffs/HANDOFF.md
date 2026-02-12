@@ -1,31 +1,26 @@
 # Session Handoff
 
-**Last Updated:** 2026-02-12 12:16:00
-**Trigger:** context-70pct-115339
+**Last Updated:** 2026-02-12 13:00:31
+**Trigger:** context-50pct-75892
 **Session ID:** default
 
 ## Git State
 
 - **Directory:** /home/x_computelabs_ai/openclaw
 - **Branch:** main
-- **Status:** 5 uncommitted changes
-- **Last Commit:** 9fec48217 chore: update to latest upstream, fix build and patch filenames
+- **Status:** 2 uncommitted changes
+- **Last Commit:** c4dbe9dde feat: add yt-downloader extension for video download + Drive upload
 
 ### Modified Files
-
-- ockerfile
-- extensions/drive-manager/src/drive-client.ts
-- handoffs/HANDOFF.md
-- pnpm-lock.yaml
-- extensions/yt-downloader/
+- andoffs/HANDOFF.md
+- src/commands/onboard-auth.config-core.ts
 
 ### Recent Commits
-
+- c4dbe9dde feat: add yt-downloader extension for video download + Drive upload
 - 9fec48217 chore: update to latest upstream, fix build and patch filenames
 - 5dd42d270 feat: add Feishu integration with community plugin and bug tracker agent
 - 0e026b679 feat: replace vertex-anthropic runtime patches with LiteLLM proxy
 - c063c3c7d feat: add selfie, rss-digest extensions and runtime patches
-- 4971ff8c7 feat: add OpenAI Codex OAuth login script for ChatGPT subscription models
 
 ---
 
@@ -45,3 +40,5 @@ _Run /handoff before /compact to capture task context here._
 ---
 
 ## Notes
+
+
