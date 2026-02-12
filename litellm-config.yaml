@@ -1,0 +1,11 @@
+model_list:
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: vertex_ai/claude-opus-4-6
+      vertex_project: ax-devbox
+      vertex_location: us-east5
+
+litellm_settings:
+  drop_params: true
+  num_retries: 2
+  request_timeout: 300

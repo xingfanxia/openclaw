@@ -11,11 +11,34 @@ services:
       VERCEL_TOKEN: ${VERCEL_TOKEN:-}
       GOOGLE_CLOUD_PROJECT: ax-devbox
       GOOGLE_CLOUD_LOCATION: us-east5
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
     volumes:
       - ${HOME}/projects:/home/node/projects
       - ${HOME}/obsidian-vault:/home/node/obsidian-vault
       - ${HOME}/.claude:/home/node/.claude:ro
       - ${HOME}/.config/gh:/home/node/.config/gh:ro
+
+  litellm-proxy:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: openclaw-litellm-proxy
+    restart: unless-stopped
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   openclaw-cli:
     environment:

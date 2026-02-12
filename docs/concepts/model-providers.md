@@ -259,6 +259,105 @@ ollama pull llama3.3
 
 Ollama is automatically detected when running locally at `http://127.0.0.1:11434/v1`. See [/providers/ollama](/providers/ollama) for model recommendations and custom configuration.
 
+### Vertex AI via LiteLLM (Docker sidecar)
+
+Use [LiteLLM](https://github.com/BerryAI/litellm) as a sidecar proxy to access
+Anthropic models on Google Vertex AI. LiteLLM translates OpenAI-compatible
+requests to Vertex AI's native API, so OpenClaw sees it as a standard
+`openai-completions` provider.
+
+**Why LiteLLM?** OpenClaw doesn't natively support `vertex-anthropic` as an API
+type. LiteLLM handles authentication (GCE metadata, ADC, or service account),
+streaming translation, tool ID sanitization, and thinking block mapping
+automatically.
+
+#### 1. Create `litellm-config.yaml`
+
+```yaml
+model_list:
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: vertex_ai/claude-opus-4-6
+      vertex_project: my-gcp-project
+      vertex_location: us-east5
+
+litellm_settings:
+  drop_params: true
+  num_retries: 2
+  request_timeout: 300
+```
+
+#### 2. Add to Docker Compose
+
+```yaml
+services:
+  litellm-proxy:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: openclaw-litellm-proxy
+    restart: unless-stopped
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+```
+
+Generate a master key: `echo "LITELLM_MASTER_KEY=sk-litellm-$(openssl rand -hex 16)" >> .env`
+
+#### 3. Configure OpenClaw
+
+```json5
+{
+  agents: {
+    defaults: {
+      model: { primary: "litellm/claude-opus-4-6" },
+      models: { "litellm/claude-opus-4-6": {} },
+    },
+  },
+  models: {
+    providers: {
+      litellm: {
+        baseUrl: "http://litellm-proxy:4000/v1",
+        apiKey: "sk-litellm-...", // your LITELLM_MASTER_KEY
+        api: "openai-completions",
+        models: [
+          {
+            id: "claude-opus-4-6",
+            name: "Claude Opus 4.6 (Vertex via LiteLLM)",
+            reasoning: true,
+            input: ["text", "image"],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 200000,
+            maxTokens: 128000,
+          },
+        ],
+      },
+    },
+  },
+}
+```
+
+Notes:
+
+- LiteLLM auto-discovers GCE metadata credentials on Compute Engine / GKE.
+  For other environments, set `GOOGLE_APPLICATION_CREDENTIALS` or use `vertex_credentials` in the config.
+- The proxy runs on the Docker bridge network — only reachable by other containers as `litellm-proxy:4000`.
+- `drop_params: true` silently drops unsupported parameters instead of erroring.
+- Set `cost` to `0` since Vertex AI billing is handled by GCP, not per-token.
+- Add multiple models by adding entries to both `model_list` (LiteLLM) and `models` (OpenClaw).
+
 ### Local proxies (LM Studio, vLLM, LiteLLM, etc.)
 
 Example (OpenAI‑compatible):
