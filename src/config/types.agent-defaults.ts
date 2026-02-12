@@ -132,6 +132,10 @@ export type AgentDefaultsConfig = {
   contextPruning?: AgentContextPruningConfig;
   /** Compaction tuning and pre-compaction memory flush behavior. */
   compaction?: AgentCompactionConfig;
+  /** Auto-compact when session exceeds this many messages (0 = disabled). */
+  sessionMessageLimit?: number;
+  /** Reset session (discard transcript) after this many compactions (0 = disabled). */
+  sessionMaxCompactions?: number;
   /** Vector memory search configuration (per-agent overrides supported). */
   memorySearch?: MemorySearchConfig;
   /** Default thinking level when no /think directive is present. */

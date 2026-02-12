@@ -105,6 +105,8 @@ export const AgentDefaultsSchema = z
       })
       .strict()
       .optional(),
+    sessionMessageLimit: z.number().int().nonnegative().optional(),
+    sessionMaxCompactions: z.number().int().nonnegative().optional(),
     thinkingDefault: z
       .union([
         z.literal("off"),
