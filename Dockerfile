@@ -53,7 +53,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && chmod a+rx /usr/local/bin/yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code @openai/codex vercel
+RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-agent-sdk @openai/codex @openai/codex-sdk vercel
+# Symlink globally-installed SDKs into /app/node_modules so bundled extension code can resolve them
+# (NODE_PATH works for CJS require() but NOT for ESM import(), symlinks work for both)
+RUN ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk /app/node_modules/@anthropic-ai/claude-agent-sdk \
+    && mkdir -p /app/node_modules/@openai \
+    && ln -s /usr/local/lib/node_modules/@openai/codex-sdk /app/node_modules/@openai/codex-sdk
 
 # Allow non-root user to write temp files during runtime/tests.
 RUN chown -R node:node /app

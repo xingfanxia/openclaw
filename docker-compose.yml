@@ -11,6 +11,10 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${CLAUDE_CONFIG_DIR:-~/.claude}:/home/node/.claude
+      - ${CODEX_CONFIG_DIR:-~/.codex}:/home/node/.codex
+      - ${GITCONFIG_OPENCLAW:-~/.gitconfig-openclaw}:/home/node/.gitconfig:ro
+      - ${PROJECTS_DIR:-~/projects}:/home/node/projects
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
       - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
@@ -40,6 +44,10 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${CLAUDE_CONFIG_DIR:-~/.claude}:/home/node/.claude
+      - ${CODEX_CONFIG_DIR:-~/.codex}:/home/node/.codex
+      - ${GITCONFIG_OPENCLAW:-~/.gitconfig-openclaw}:/home/node/.gitconfig:ro
+      - ${PROJECTS_DIR:-~/projects}:/home/node/projects
     stdin_open: true
     tty: true
     init: true
