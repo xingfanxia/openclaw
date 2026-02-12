@@ -12,11 +12,13 @@ services:
       GOOGLE_CLOUD_PROJECT: ax-devbox
       GOOGLE_CLOUD_LOCATION: us-east5
       BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      NODE_ENV: development
     volumes:
       - ${HOME}/projects:/home/node/projects
       - ${HOME}/obsidian-vault:/home/node/obsidian-vault
-      - ${HOME}/.claude:/home/node/.claude:ro
+      - ${HOME}/.claude:/home/node/.claude
       - ${HOME}/.config/gh:/home/node/.config/gh:ro
+      - ${HOME}/.gitconfig-openclaw:/home/node/.gitconfig:ro
 
   litellm-proxy:
     image: ghcr.io/berriai/litellm:main-stable
