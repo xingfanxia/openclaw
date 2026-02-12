@@ -3,7 +3,22 @@
 // Run inside the container: node /tmp/patch-telegram-chunking.js
 
 const fs = require("fs");
-const file = "/app/dist/reply-L7QaxXzW.js";
+const { execSync } = require("child_process");
+
+// Dynamically find the reply file containing sendMessageTelegram
+const replyFiles = execSync(
+  'grep -rl "sendMessageTelegram(to, content," /app/dist/ 2>/dev/null || true',
+  { encoding: "utf8" },
+)
+  .trim()
+  .split("\n")
+  .filter((f) => f.includes("/reply-"));
+const file = replyFiles[0];
+if (!file) {
+  console.log("[patch] WARNING: Could not find reply-*.js with sendMessageTelegram");
+  process.exit(0);
+}
+console.log(`[patch] Found target file: ${file}`);
 let code = fs.readFileSync(file, "utf8");
 
 // The exact code block in handleTelegramAction's sendMessage action
@@ -66,8 +81,6 @@ if (code.includes(OLD)) {
   console.log("[patch] Telegram auto-chunking applied successfully");
   console.log("[patch] Messages > 4000 chars will be split at newline boundaries");
 } else {
-  console.log("[patch] WARNING: Could not find target code block");
-  console.log(
-    "[patch] The dist file may have been updated. Check reply-L7QaxXzW.js around line 17799",
-  );
+  console.log("[patch] WARNING: Could not find target code block in " + file);
+  console.log("[patch] The code pattern may have changed in this build.");
 }
