@@ -33,10 +33,9 @@ export async function resolveClaudeConfig(
   return {
     env: {
       HOME: homeDir,
-      // Preserve existing ANTHROPIC_API_KEY if set
-      ...(process.env.ANTHROPIC_API_KEY
-        ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY }
-        : {}),
+      // Clear ANTHROPIC_API_KEY so Claude Code CLI uses OAuth from .credentials.json
+      // instead of the container's API key (which may be expired/invalid).
+      ANTHROPIC_API_KEY: "",
     },
   };
 }
