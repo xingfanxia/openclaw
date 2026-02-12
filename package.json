@@ -106,6 +106,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.14.1",
+    "@anthropic-ai/vertex-sdk": "^0.14.3",
     "@aws-sdk/client-bedrock": "^3.988.0",
     "@buape/carbon": "0.14.0",
     "@clack/prompts": "^1.0.0",

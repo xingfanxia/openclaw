@@ -3,7 +3,7 @@
 // Run inside the container: node /tmp/patch-telegram-chunking.js
 
 const fs = require("fs");
-const file = "/app/dist/reply-BHlTJvrR.js";
+const file = "/app/dist/reply-L7QaxXzW.js";
 let code = fs.readFileSync(file, "utf8");
 
 // The exact code block in handleTelegramAction's sendMessage action
@@ -68,6 +68,6 @@ if (code.includes(OLD)) {
 } else {
   console.log("[patch] WARNING: Could not find target code block");
   console.log(
-    "[patch] The dist file may have been updated. Check reply-BHlTJvrR.js around line 17490",
+    "[patch] The dist file may have been updated. Check reply-L7QaxXzW.js around line 17799",
   );
 }

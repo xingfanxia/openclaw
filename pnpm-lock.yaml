@@ -21,6 +21,9 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 0.14.1
         version: 0.14.1(zod@4.3.6)
+      '@anthropic-ai/vertex-sdk':
+        specifier: ^0.14.3
+        version: 0.14.3(zod@4.3.6)
       '@aws-sdk/client-bedrock':
         specifier: ^3.988.0
         version: 3.988.0
@@ -542,7 +545,19 @@ importers:
         specifier: workspace:*
         version: link:../..
 
+  extensions/rss-digest:
+    devDependencies:
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
   extensions/security-filter:
+    devDependencies:
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
+  extensions/selfie:
     devDependencies:
       openclaw:
         specifier: workspace:*
@@ -701,6 +716,9 @@ packages:
     peerDependenciesMeta:
       zod:
         optional: true
+
+  '@anthropic-ai/vertex-sdk@0.14.3':
+    resolution: {integrity: sha512-GJZTkkvN66gM3Epqm9laKEjC3orQqzmQt8JAgTN9+zlb+I+1/oEd3Z7rj2tkEKCTeOUVScdhcXPudN8GdpuGqA==}
 
   '@aws-crypto/crc32@5.2.0':
     resolution: {integrity: sha512-nLbCWqQNgUiwwtFsen1AdzAtvuLRsQS8rYgMuxCrdKf9kOssamGLuPwyTY9wyYblNr9+1XM8v6zoDTPPSIeANg==}
@@ -6131,6 +6149,15 @@ snapshots:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
       zod: 4.3.6
+
+  '@anthropic-ai/vertex-sdk@0.14.3(zod@4.3.6)':
+    dependencies:
+      '@anthropic-ai/sdk': 0.73.0(zod@4.3.6)
+      google-auth-library: 9.15.1
+    transitivePeerDependencies:
+      - encoding
+      - supports-color
+      - zod
 
   '@aws-crypto/crc32@5.2.0':
     dependencies:
