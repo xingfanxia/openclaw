@@ -76,7 +76,12 @@ function buildTimeSection(params: { userTimezone?: string }) {
   if (!params.userTimezone) {
     return [];
   }
-  return ["## Current Date & Time", `Time zone: ${params.userTimezone}`, ""];
+  return [
+    "## Current Date & Time",
+    `Time zone: ${params.userTimezone}`,
+    `IMPORTANT: Always present times in ${params.userTimezone}. When tool results contain timestamps with UTC offsets (e.g. +00:00), convert them to ${params.userTimezone} before responding.`,
+    "",
+  ];
 }
 
 function buildReplyTagsSection(isMinimal: boolean) {
