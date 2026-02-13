@@ -135,6 +135,7 @@ export default function register(api: OpenClawPluginApi) {
           const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            signal: AbortSignal.timeout(120_000),
             body: JSON.stringify({
               contents: [{ parts }],
               generationConfig: { responseModalities: ["IMAGE"] },
