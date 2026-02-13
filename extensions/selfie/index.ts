@@ -11,13 +11,7 @@ type PluginCfg = {
 
 const MODEL = "gemini-3-pro-image-preview";
 
-const REFERENCE_FILENAMES = [
-  "mh_049.png",
-  "mh_053.png",
-  "mh_055.png",
-  "mh_058.png",
-  "mh_060.png",
-];
+const REFERENCE_FILENAMES = ["mh_049.png", "mh_053.png", "mh_055.png", "mh_058.png", "mh_060.png"];
 
 /**
  * Hybrid-s2 prompt: face from reference images, body from text, scene from agent.
