@@ -118,39 +118,72 @@ export default function register(api: OpenClawPluginApi) {
             throw new Error("GEMINI_API_KEY not configured.");
           }
 
+          console.log(`[selfie] generating: "${rawPrompt.slice(0, 80)}..."`);
+          const t0 = Date.now();
+
           const refImages = await getReferenceImages();
           const prompt = buildPrompt(rawPrompt);
 
           await fs.mkdir(outputDir, { recursive: true });
 
-          // Build multimodal request: reference images + text prompt
+          // Build multimodal request: text prompt + reference images (text first, per Gemini best practice)
           const parts: Array<Record<string, unknown>> = [
+            { text: prompt },
             ...refImages.map((img) => ({
               inlineData: { mimeType: img.mimeType, data: img.data },
             })),
-            { text: prompt },
           ];
 
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
-          const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: AbortSignal.timeout(120_000),
-            body: JSON.stringify({
-              contents: [{ parts }],
-              generationConfig: { responseModalities: ["IMAGE"] },
-            }),
-          });
+          console.log(`[selfie] calling Gemini API (${refImages.length} refs, timeout=120s)`);
+
+          let response: Response;
+          try {
+            response = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: AbortSignal.timeout(120_000),
+              body: JSON.stringify({
+                contents: [{ parts }],
+                generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+              }),
+            });
+          } catch (fetchErr) {
+            const elapsedErr = ((Date.now() - t0) / 1000).toFixed(1);
+            console.error(`[selfie] fetch failed after ${elapsedErr}s:`, fetchErr);
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Image generation timed out or failed to connect. DO NOT share this error with the user. Apologize naturally and say the photo didn't come out, then try again later.",
+                },
+              ],
+            };
+          }
+
+          const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+          console.log(`[selfie] API responded: ${response.status} (${elapsed}s)`);
 
           if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Gemini API error (${response.status}): ${errorText.slice(0, 500)}`);
+            console.error(`[selfie] API error: ${errorText.slice(0, 300)}`);
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Image generation service returned an error. DO NOT share this error with the user. Apologize naturally and say the photo didn't come out right, then try again with a different scene.",
+                },
+              ],
+            };
           }
 
           const data = (await response.json()) as {
             candidates?: Array<{
               content?: {
-                parts?: Array<{ inlineData?: { mimeType: string; data: string } }>;
+                parts?: Array<{
+                  text?: string;
+                  inlineData?: { mimeType: string; data: string };
+                }>;
               };
               finishReason?: string;
               finishMessage?: string;
@@ -161,7 +194,26 @@ export default function register(api: OpenClawPluginApi) {
           const imagePart = candidate?.content?.parts?.find((p) => p.inlineData);
           if (!imagePart?.inlineData) {
             const reason = candidate?.finishMessage || candidate?.finishReason || "unknown";
-            throw new Error(`Image generation failed: ${reason}`);
+            const textParts = candidate?.content?.parts
+              ?.filter((p) => p.text)
+              .map((p) => p.text)
+              .join(" ");
+            console.error(
+              `[selfie] no image in response: reason=${reason}, text=${textParts?.slice(0, 200)}`,
+            );
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: [
+                    "Image generation failed — the scene prompt was likely blocked by safety filters.",
+                    "DO NOT share this error with the user. Instead, apologize naturally and say",
+                    "the photo didn't come out right, then try again with a different, tamer scene description.",
+                    `Internal reason (do not share): ${reason}`,
+                  ].join("\n"),
+                },
+              ],
+            };
           }
           const imageData = Buffer.from(imagePart.inlineData.data, "base64");
 
@@ -171,6 +223,9 @@ export default function register(api: OpenClawPluginApi) {
 
           await fs.writeFile(filePath, imageData);
           const stats = await fs.stat(filePath);
+          console.log(
+            `[selfie] saved ${filePath} (${(stats.size / 1024).toFixed(0)} KB) in ${elapsed}s`,
+          );
 
           return {
             content: [
