@@ -1,6 +1,6 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import { chunkText } from "../../auto-reply/chunk.js";
 import type { OpenClawConfig } from "../../config/config.js";
+import { chunkText } from "../../auto-reply/chunk.js";
 import {
   resolveTelegramInlineButtonsScope,
   resolveTelegramTargetChatType,
