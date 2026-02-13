@@ -47,6 +47,14 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/*
 
+# Developer tools for coding agents (codex/claude_code use these in sandboxed sessions)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ripgrep \
+      jq \
+      fd-find \
+    && ln -s /usr/bin/fdfind /usr/local/bin/fd \
+    && rm -rf /var/lib/apt/lists/*
+
 # yt-dlp + ffmpeg (needed by yt-downloader extension)
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
