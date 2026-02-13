@@ -11,10 +11,35 @@ import {
   resolveAccountId,
 } from "../types.js";
 
-function groupByDate(events: CalendarEvent[]): Record<string, CalendarEvent[]> {
+/**
+ * Compute midnight (start of day) in the given IANA timezone as a UTC Date.
+ *
+ * Approach: take noon UTC on the target calendar date, find the local hour/minute
+ * at that instant, and subtract to reach local midnight.
+ */
+function startOfDayInTz(now: Date, tz: string): Date {
+  // Today's calendar date in the target timezone (YYYY-MM-DD)
+  const dateStr = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now);
+  // Noon UTC on that calendar date — avoids DST-transition edge cases around midnight
+  const noonUtc = new Date(`${dateStr}T12:00:00Z`);
+  // What local time is it in `tz` at noonUtc?
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(noonUtc);
+  const h = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+  const m = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+  // Subtract local hours/minutes from noonUtc to reach midnight local
+  return new Date(noonUtc.getTime() - h * 3_600_000 - m * 60_000);
+}
+
+function groupByDate(events: CalendarEvent[], timezone: string): Record<string, CalendarEvent[]> {
   const groups: Record<string, CalendarEvent[]> = {};
+  const dateFmt = new Intl.DateTimeFormat("en-CA", { timeZone: timezone });
   for (const event of events) {
-    const dateKey = event.allDay ? event.start : event.start.split("T")[0];
+    const dateKey = event.allDay ? event.start : dateFmt.format(new Date(event.start));
     if (!groups[dateKey]) {
       groups[dateKey] = [];
     }
@@ -23,7 +48,7 @@ function groupByDate(events: CalendarEvent[]): Record<string, CalendarEvent[]> {
   return groups;
 }
 
-function formatTime(isoString: string, allDay: boolean): string {
+function formatTime(isoString: string, allDay: boolean, timezone: string): string {
   if (allDay) return "all-day";
   try {
     const d = new Date(isoString);
@@ -31,6 +56,7 @@ function formatTime(isoString: string, allDay: boolean): string {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
+      timeZone: timezone,
     });
   } catch {
     return isoString;
@@ -76,8 +102,7 @@ export function createCalendarAgendaTool(
       try {
         const days = params.days ?? 1;
         const now = new Date();
-        const startOfDay = new Date(now);
-        startOfDay.setHours(0, 0, 0, 0);
+        const startOfDay = startOfDayInTz(now, defaultTimezone);
         const endOfRange = new Date(startOfDay.getTime() + days * 24 * 60 * 60 * 1000);
 
         const events = await listEvents(oauthConfig, accountId, {
@@ -87,7 +112,7 @@ export function createCalendarAgendaTool(
           maxResults: 100,
         });
 
-        const grouped = groupByDate(events);
+        const grouped = groupByDate(events, defaultTimezone);
 
         const agendaDays: Array<{
           date: string;
@@ -104,11 +129,12 @@ export function createCalendarAgendaTool(
         const dateKeys = Object.keys(grouped).sort();
         for (const dateKey of dateKeys) {
           const dayEvents = grouped[dateKey];
-          const dateObj = new Date(dateKey + "T12:00:00");
+          const dateObj = new Date(dateKey + "T12:00:00Z");
           const dayLabel = dateObj.toLocaleDateString("en-US", {
             weekday: "long",
             month: "short",
             day: "numeric",
+            timeZone: defaultTimezone,
           });
 
           agendaDays.push({
@@ -116,7 +142,7 @@ export function createCalendarAgendaTool(
             dayLabel,
             events: dayEvents.map((e) => ({
               id: e.id,
-              time: formatTime(e.start, e.allDay),
+              time: formatTime(e.start, e.allDay, defaultTimezone),
               summary: e.summary,
               location: e.location,
               hangoutLink: e.hangoutLink,
@@ -124,14 +150,17 @@ export function createCalendarAgendaTool(
           });
         }
 
+        // Fill in empty days that had no events
+        const dateFmt = new Intl.DateTimeFormat("en-CA", { timeZone: defaultTimezone });
         for (let i = 0; i < days; i++) {
           const d = new Date(startOfDay.getTime() + i * 24 * 60 * 60 * 1000);
-          const dateKey = d.toISOString().split("T")[0];
+          const dateKey = dateFmt.format(d);
           if (!grouped[dateKey]) {
             const dayLabel = d.toLocaleDateString("en-US", {
               weekday: "long",
               month: "short",
               day: "numeric",
+              timeZone: defaultTimezone,
             });
             agendaDays.push({
               date: dateKey,
