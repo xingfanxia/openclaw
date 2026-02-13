@@ -1,4 +1,6 @@
 import { Type } from "@sinclair/typebox";
+import * as fs from "fs";
+import * as path from "path";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
 import type { OpenClawPluginApi } from "../../../src/plugins/types.js";
 import type { ProjectRegistry } from "./project-registry.js";
@@ -16,9 +18,80 @@ type PluginCfg = {
 
 type CodexUsage = {
   input_tokens?: number;
+  cached_input_tokens?: number;
   output_tokens?: number;
   total_tokens?: number;
 };
+
+type CodexItem = {
+  id?: string;
+  type: string;
+  command?: string;
+  aggregated_output?: string;
+  exit_code?: number;
+  status?: string;
+  changes?: Array<{ path: string; kind: string }>;
+  text?: string;
+  message?: string;
+  query?: string;
+  items?: Array<{ text: string; completed: boolean }>;
+};
+
+const LOG_DIR = "/tmp/openclaw";
+const LOG_FILE = path.join(LOG_DIR, "coding-sessions.jsonl");
+
+function appendSessionLog(entry: Record<string, unknown>): void {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(LOG_FILE, JSON.stringify(entry) + "\n");
+  } catch {
+    // Logging should never break the tool
+  }
+}
+
+function extractItemsSummary(items: CodexItem[]): {
+  commands: Array<{ command: string; exitCode?: number; outputPreview: string }>;
+  filesChanged: Array<{ path: string; kind: string }>;
+  errors: string[];
+  agentMessages: string[];
+  reasoning: string[];
+} {
+  const commands: Array<{ command: string; exitCode?: number; outputPreview: string }> = [];
+  const filesChanged: Array<{ path: string; kind: string }> = [];
+  const errors: string[] = [];
+  const agentMessages: string[] = [];
+  const reasoning: string[] = [];
+
+  for (const item of items) {
+    switch (item.type) {
+      case "command_execution":
+        commands.push({
+          command: item.command ?? "",
+          exitCode: item.exit_code,
+          outputPreview: (item.aggregated_output ?? "").slice(0, 500),
+        });
+        break;
+      case "file_change":
+        if (item.changes) {
+          for (const change of item.changes) {
+            filesChanged.push({ path: change.path, kind: change.kind });
+          }
+        }
+        break;
+      case "error":
+        errors.push(item.message ?? item.text ?? "unknown error");
+        break;
+      case "agent_message":
+        agentMessages.push(item.text ?? "");
+        break;
+      case "reasoning":
+        reasoning.push(item.text ?? "");
+        break;
+    }
+  }
+
+  return { commands, filesChanged, errors, agentMessages, reasoning };
+}
 
 export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegistry): AnyAgentTool {
   return {
@@ -26,7 +99,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
     description: [
       "Run an OpenAI Codex session to perform coding tasks: read/write files, run builds,",
       "execute commands, refactor code, fix bugs, and more.",
-      "Returns a summary of what was done, files changed, and status.",
+      "Returns a detailed summary including files changed, commands run, and status.",
     ].join(" "),
     parameters: Type.Object({
       task: Type.String({
@@ -112,6 +185,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
 
       const abortController = new AbortController();
       const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+      const startTime = Date.now();
 
       try {
         const codex = new CodexClass({
@@ -136,33 +210,70 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
             : {}),
         });
 
-        const startTime = Date.now();
         const result = await thread.run(task, {
           signal: abortController.signal,
         });
         const durationMs = Date.now() - startTime;
 
         const usage = (result.usage ?? {}) as CodexUsage;
+        const items = ((result as Record<string, unknown>).items ?? []) as CodexItem[];
+        const itemsSummary = extractItemsSummary(items);
+
+        const hasErrors =
+          itemsSummary.errors.length > 0 ||
+          itemsSummary.commands.some((c) => c.exitCode !== undefined && c.exitCode !== 0);
 
         const summary = {
-          status: "success",
+          status: hasErrors ? "completed_with_errors" : "success",
           result: result.finalResponse ?? "",
           durationMs,
           workingDirectory: effectiveCwd,
           model: model ?? "default",
+          reasoningEffort: reasoningEffort ?? "default",
           usage: {
             inputTokens: usage.input_tokens ?? 0,
+            cachedInputTokens: usage.cached_input_tokens ?? 0,
             outputTokens: usage.output_tokens ?? 0,
-            totalTokens: usage.total_tokens ?? 0,
           },
+          filesChanged: itemsSummary.filesChanged,
+          commandsRun: itemsSummary.commands.length,
+          failedCommands: itemsSummary.commands.filter(
+            (c) => c.exitCode !== undefined && c.exitCode !== 0,
+          ).length,
+          errors: itemsSummary.errors,
         };
+
+        // Persistent log — full detail for debugging
+        appendSessionLog({
+          timestamp: new Date().toISOString(),
+          tool: "codex",
+          taskPreview: task.slice(0, 200),
+          ...summary,
+          commands: itemsSummary.commands,
+          agentMessages: itemsSummary.agentMessages.slice(-5),
+          reasoning: itemsSummary.reasoning.slice(-3).map((r) => r.slice(0, 300)),
+        });
 
         return {
           content: [{ type: "text" as const, text: JSON.stringify(summary, null, 2) }],
           details: summary,
         };
       } catch (err: unknown) {
+        const durationMs = Date.now() - startTime;
         const errMsg = err instanceof Error ? err.message : String(err);
+
+        // Log failures too
+        appendSessionLog({
+          timestamp: new Date().toISOString(),
+          tool: "codex",
+          taskPreview: task.slice(0, 200),
+          status: abortController.signal.aborted ? "timeout" : "error",
+          error: errMsg,
+          durationMs,
+          workingDirectory: effectiveCwd,
+          model: model ?? "default",
+        });
+
         if (abortController.signal.aborted) {
           return {
             content: [
@@ -172,6 +283,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
                   {
                     status: "timeout",
                     error: `Task timed out after ${timeoutMs / 1000}s`,
+                    durationMs,
                   },
                   null,
                   2,

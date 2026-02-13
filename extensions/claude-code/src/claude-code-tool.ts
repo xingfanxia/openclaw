@@ -1,9 +1,23 @@
 import { Type } from "@sinclair/typebox";
+import * as fs from "fs";
+import * as path from "path";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
 import type { OpenClawPluginApi } from "../../../src/plugins/types.js";
 import type { ProjectRegistry } from "./project-registry.js";
 import type { WorktreeManager, WorktreeInfo } from "./worktree-manager.js";
 import { resolveClaudeConfig } from "./config-sharing.js";
+
+const LOG_DIR = "/tmp/openclaw";
+const LOG_FILE = path.join(LOG_DIR, "coding-sessions.jsonl");
+
+function appendSessionLog(entry: Record<string, unknown>): void {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(LOG_FILE, JSON.stringify(entry) + "\n");
+  } catch {
+    // Logging should never break the tool
+  }
+}
 
 type PluginCfg = {
   workspaceDir?: string;
@@ -186,6 +200,7 @@ export function createClaudeCodeTool(
 
       const abortController = new AbortController();
       const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+      const startTime = Date.now();
 
       const assistantTexts: string[] = [];
       let resultMsg: SDKMessage | undefined;
@@ -220,7 +235,22 @@ export function createClaudeCodeTool(
           }
         }
       } catch (err: unknown) {
+        const durationMs = Date.now() - startTime;
         const errMsg = err instanceof Error ? err.message : String(err);
+
+        // Log failures
+        appendSessionLog({
+          timestamp: new Date().toISOString(),
+          tool: "claude_code",
+          taskPreview: task.slice(0, 200),
+          status: abortController.signal.aborted ? "timeout" : "error",
+          error: errMsg,
+          durationMs,
+          workingDirectory: effectiveCwd,
+          assistantTextCount: assistantTexts.length,
+          lastAssistantText: assistantTexts.slice(-1).map((t) => t.slice(0, 300)),
+        });
+
         if (abortController.signal.aborted) {
           return {
             content: [
@@ -230,6 +260,7 @@ export function createClaudeCodeTool(
                   {
                     status: "timeout",
                     error: `Task timed out after ${timeoutMs / 1000}s`,
+                    durationMs,
                     partialOutput: assistantTexts.slice(-3).join("\n\n"),
                   },
                   null,
@@ -270,6 +301,23 @@ export function createClaudeCodeTool(
           };
         }
       }
+
+      // Persistent log — full detail for debugging
+      appendSessionLog({
+        timestamp: new Date().toISOString(),
+        tool: "claude_code",
+        taskPreview: task.slice(0, 200),
+        status: summary.status,
+        result: (summary.result as string)?.slice?.(0, 500) ?? "",
+        turns: summary.turns,
+        costUsd: summary.costUsd,
+        durationMs: summary.durationMs,
+        workingDirectory: summary.workingDirectory,
+        ...(summary.errors ? { errors: summary.errors } : {}),
+        ...(summary.worktree ? { worktree: summary.worktree } : {}),
+        assistantTextCount: assistantTexts.length,
+        lastAssistantText: assistantTexts.slice(-1).map((t) => t.slice(0, 300)),
+      });
 
       return {
         content: [{ type: "text" as const, text: JSON.stringify(summary, null, 2) }],
