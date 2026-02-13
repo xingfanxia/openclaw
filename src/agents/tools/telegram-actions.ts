@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { chunkText } from "../../auto-reply/chunk.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import {
   resolveTelegramInlineButtonsScope,
@@ -181,7 +182,7 @@ export async function handleTelegramAction(
         "Telegram bot token missing. Set TELEGRAM_BOT_TOKEN or channels.telegram.botToken.",
       );
     }
-    const result = await sendMessageTelegram(to, content, {
+    const sendOpts = {
       token,
       accountId: accountId ?? undefined,
       mediaUrl: mediaUrl || undefined,
@@ -191,7 +192,24 @@ export async function handleTelegramAction(
       quoteText: quoteText ?? undefined,
       asVoice: typeof params.asVoice === "boolean" ? params.asVoice : undefined,
       silent: typeof params.silent === "boolean" ? params.silent : undefined,
-    });
+    };
+    // Chunk long messages to stay within Telegram's 4096 char limit.
+    // Skip chunking for media messages (captions have separate limits).
+    const chunks = mediaUrl ? [content] : chunkText(content, 4000);
+    let result = { messageId: "", chatId: "" };
+    for (let i = 0; i < chunks.length; i++) {
+      const opts =
+        i === 0
+          ? sendOpts
+          : {
+              ...sendOpts,
+              mediaUrl: undefined,
+              buttons: undefined,
+              replyToMessageId: undefined,
+              quoteText: undefined,
+            };
+      result = await sendMessageTelegram(to, chunks[i], opts);
+    }
     return jsonResult({
       ok: true,
       messageId: result.messageId,
