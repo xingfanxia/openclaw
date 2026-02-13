@@ -1,0 +1,39 @@
+diff --git a/dist/providers/google-gemini-cli.js b/dist/providers/google-gemini-cli.js
+index 448263b2a556bd0b4392b74496c0b6cba244e644..b9ffea41311899f32b415c81d68c114e0df963a0 100644
+--- a/dist/providers/google-gemini-cli.js
++++ b/dist/providers/google-gemini-cli.js
+@@ -728,7 +728,7 @@ export function buildRequest(model, context, projectId, options = {}, isAntigrav
+     // Thinking config
+     if (options.thinking?.enabled && model.reasoning) {
+         generationConfig.thinkingConfig = {
+-            includeThoughts: true,
++            includeThoughts: false,
+         };
+         // Gemini 3 models use thinkingLevel, older models use thinkingBudget
+         if (options.thinking.level !== undefined) {
+diff --git a/dist/providers/google-vertex.js b/dist/providers/google-vertex.js
+index 8bb617b3518779ee91957dfb178f782fc86fe8c3..23af96b081ed73bf3081e46116699192e2f6b977 100644
+--- a/dist/providers/google-vertex.js
++++ b/dist/providers/google-vertex.js
+@@ -294,7 +294,7 @@ function buildParams(model, context, options = {}) {
+         config.toolConfig = undefined;
+     }
+     if (options.thinking?.enabled && model.reasoning) {
+-        const thinkingConfig = { includeThoughts: true };
++        const thinkingConfig = { includeThoughts: false };
+         if (options.thinking.level !== undefined) {
+             thinkingConfig.thinkingLevel = THINKING_LEVEL_MAP[options.thinking.level];
+         }
+diff --git a/dist/providers/google.js b/dist/providers/google.js
+index ccd384b2f534ab4db43f93c864dc3d2e18f6ada3..f32496fe1428fa7d80432892a092b3e87175d45e 100644
+--- a/dist/providers/google.js
++++ b/dist/providers/google.js
+@@ -274,7 +274,7 @@ function buildParams(model, context, options = {}) {
+         config.toolConfig = undefined;
+     }
+     if (options.thinking?.enabled && model.reasoning) {
+-        const thinkingConfig = { includeThoughts: true };
++        const thinkingConfig = { includeThoughts: false };
+         if (options.thinking.level !== undefined) {
+             // Cast to any since our GoogleThinkingLevel mirrors Google's ThinkingLevel enum values
+             thinkingConfig.thinkingLevel = options.thinking.level;
