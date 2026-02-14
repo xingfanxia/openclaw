@@ -13,21 +13,55 @@ const MODEL = "gemini-3-pro-image-preview";
 
 const REFERENCE_FILENAMES = ["mh_049.png", "mh_053.png", "mh_055.png", "mh_058.png", "mh_060.png"];
 
+type SelfieStyle = "cozy" | "glam";
+
 /**
  * Hybrid-s2 prompt: face from reference images, body from text, scene from agent.
+ * Style adapts based on context:
+ *   cozy — at home, lazy, no makeup, messy hair, warm and real
+ *   glam — going out, influencer aesthetic, composed angles, beauty filter look
  */
-function buildPrompt(scenePrompt: string): string {
-  return [
+function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
+  const face = [
     "These reference photos show the person's FACE — preserve her exact facial features,",
-    "eyes, nose, lips, face shape.",
-    "",
+    "eyes, nose, lips, face shape, skin tone, and hair.",
+  ];
+
+  const body = [
     "Generate her with this body type: curvy hourglass figure with full bust, narrow waist,",
     "wide hips, and thick thighs. Athletic but soft — she works out regularly.",
-    "",
-    `New scene: ${scenePrompt}`,
-    "",
-    "Style: photorealistic casual iPhone selfie, candid, natural lighting, NOT studio or AI-looking.",
-  ].join("\n");
+  ];
+
+  const styleNotes =
+    style === "glam"
+      ? [
+          "IMPORTANT STYLE NOTES — this must look like a Chinese social media influencer (网红) selfie:",
+          "- Shot on iPhone, high quality but not professional camera",
+          "- Subtle beauty filter applied — skin is smooth and luminous but not plastic",
+          "- Warm color grading, slightly lifted shadows, soft contrast (like a VSCO or Ulike filter)",
+          "- NOT overly edited or AI-looking — it should look real but polished",
+          "- The composition should feel intentionally casual (摆拍) — 'effortlessly pretty'",
+          "- She is photogenic and knows her angles",
+        ]
+      : [
+          "IMPORTANT STYLE NOTES — this must look like a real, unfiltered, candid moment at home:",
+          "- Shot on iPhone front camera, casual and unplanned",
+          "- NO beauty filter, NO skin smoothing — real skin texture, maybe a small blemish",
+          "- Natural indoor lighting (warm lamp, window light, screen glow) — not flattering, just real",
+          "- Slightly messy, imperfect framing — she's not trying to look good, she just IS",
+          "- Hair can be messy, tangled, in a lazy bun or clip",
+          "- Minimal or zero makeup — bare face, maybe leftover mascara",
+          "- The vibe is 'boyfriend's POV' or 'sent this to my bf without thinking'",
+        ];
+
+  const styleLine =
+    style === "glam"
+      ? "Style: photorealistic Chinese social media selfie, iPhone quality, subtle beauty filter, warm tones, influencer aesthetic. NOT studio photography, NOT AI art — specifically 小红书/抖音 Chinese internet aesthetic."
+      : "Style: photorealistic candid home selfie, iPhone front camera, no filter, no makeup, raw and natural. NOT polished, NOT influencer — just a real girl at home being herself.";
+
+  return [...face, "", ...body, "", ...styleNotes, "", `Scene: ${scenePrompt}`, "", styleLine].join(
+    "\n",
+  );
 }
 
 /**
@@ -71,25 +105,32 @@ export default function register(api: OpenClawPluginApi) {
           "Generate a photorealistic selfie using face reference images + your scene description.",
           "Uses hybrid s2 strategy: face accuracy from reference photos, body from text, scene from you.",
           "",
-          "The tool handles face consistency and body description automatically.",
-          "You write a creative scene prompt — describe the setting, outfit, pose, mood, lighting.",
+          "The tool handles face consistency, body description, and photo style automatically.",
+          "You write a creative scene prompt and pick the right style for the context.",
           "",
-          "Think about what fits the current moment:",
-          "- Time of day, season, weather",
-          "- What she'd actually be doing right now",
-          "- Her mood, recent conversation topics",
-          "- Mix up outfits, locations, poses naturally",
+          "## Two Styles — pick based on context:",
           "",
-          "Examples (inspiration, not templates):",
-          '- "Post-workout in the gym, hair in messy ponytail, wearing black sports bra and leggings, slight flush, gym equipment behind"',
-          '- "Morning coffee at a sunny cafe window, oversized cream sweater, sleepy soft smile, warm light"',
-          '- "Getting ready for dinner, little black dress, doing hair in bathroom mirror, phone in hand"',
-          '- "Lazy Sunday on the couch, oversized hoodie, messy bun, laptop nearby, cozy blankets"',
-          '- "Walking through a park in autumn, fitted jacket, scarf, golden hour light filtering through trees"',
+          '### style: "cozy" (在家/慵懒/素颜)',
+          "Use when she's at home, just woke up, lounging, gaming, or being lazy.",
+          "Result: no filter, messy hair, bare face, imperfect framing, real and warm.",
+          "Examples:",
+          '- "Lying on the couch in an oversized hoodie, messy bun, blanket, watching something on laptop, warm lamp light"',
+          '- "Just woke up in bed, hair everywhere, squinting at phone, morning sunlight through curtains"',
+          '- "Cross-legged on the floor gaming, headset around neck, oversized tee, snacks nearby, screen glow on face"',
+          '- "In the bathroom mirror, toothbrush in mouth, sleep shirt, hair clip holding bangs back, fluorescent light"',
           "",
-          "After generating, send the image using the message tool:",
-          "  1. Call image_generate with your scene prompt",
-          "  2. Call message tool with action='send', media=<returned_path>, message=<caption>",
+          '### style: "glam" (出门/网红风/精心打扮)',
+          "Use when she's going out, at a cafe, traveling, dining, shopping, or working out.",
+          "Result: beauty filter look, warm tones, composed angles, 小红书/抖音 influencer aesthetic.",
+          "Examples:",
+          '- "Sitting at a minimalist cafe, holding latte, oversized cream cardigan, soft window light, 45° angle from above"',
+          '- "Hotel balcony at golden hour, flowy white blouse, wind in hair, city skyline behind, warm sunset tones"',
+          '- "Gym mirror selfie, matching dusty mauve sports bra and leggings, post-workout glow, confident pose"',
+          '- "Night street with neon signs, leather jacket, colorful bokeh, edgy urban vibe"',
+          "",
+          "## Workflow:",
+          "1. Call image_generate with prompt + style",
+          "2. Call message tool with action='send', media=<returned_path>, message=<caption>",
           "",
           "SAFETY: Gemini has safety filters. Use tasteful descriptions.",
         ].join("\n"),
@@ -100,8 +141,15 @@ export default function register(api: OpenClawPluginApi) {
               type: "string",
               description:
                 "Creative scene description: outfit, pose, location, mood, lighting. " +
-                "Face and body are handled automatically from reference images. " +
-                "Focus on making the scene feel natural and contextual.",
+                "Face and body are handled automatically. Focus on the scene and vibe.",
+            },
+            style: {
+              type: "string",
+              enum: ["cozy", "glam"],
+              description:
+                'Photo style. "cozy" = at home, no filter, raw and real. ' +
+                '"glam" = going out, influencer aesthetic, beauty filter look. ' +
+                "Default: cozy.",
             },
           },
           required: ["prompt"],
@@ -113,16 +161,19 @@ export default function register(api: OpenClawPluginApi) {
             throw new Error("prompt is required");
           }
 
+          const style: SelfieStyle =
+            typeof params.style === "string" && params.style === "glam" ? "glam" : "cozy";
+
           const apiKey = cfg.geminiApiKey || process.env.GEMINI_API_KEY || "";
           if (!apiKey) {
             throw new Error("GEMINI_API_KEY not configured.");
           }
 
-          console.log(`[selfie] generating: "${rawPrompt.slice(0, 80)}..."`);
+          console.log(`[selfie] generating [${style}]: "${rawPrompt.slice(0, 80)}..."`);
           const t0 = Date.now();
 
           const refImages = await getReferenceImages();
-          const prompt = buildPrompt(rawPrompt);
+          const prompt = buildPrompt(rawPrompt, style);
 
           await fs.mkdir(outputDir, { recursive: true });
 
