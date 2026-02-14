@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readdir, mkdir } from "node:fs/promises";
+import { readdir, mkdir, copyFile, stat } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { promisify } from "node:util";
 
@@ -56,6 +56,9 @@ export class WorktreeManager {
     await execFileAsync("git", ["worktree", "add", worktreePath, "-b", branchName], {
       cwd: projectPath,
     });
+
+    // Copy gitignored .env* files that are needed for builds (including nested ones)
+    await copyEnvFiles(projectPath, worktreePath);
 
     return {
       branchName,
@@ -262,6 +265,44 @@ function formatTimestamp(date: Date): string {
   const mi = String(date.getMinutes()).padStart(2, "0");
   const s = String(date.getSeconds()).padStart(2, "0");
   return `${y}${mo}${d}-${h}${mi}${s}`;
+}
+
+const ENV_PATTERN = /^\.env(\..*)?$/;
+
+/**
+ * Recursively find and copy .env* files from source to destination.
+ * Skips node_modules, .git, and other heavy directories.
+ */
+async function copyEnvFiles(srcRoot: string, dstRoot: string): Promise<void> {
+  const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", ".turbo", ".vercel"]);
+
+  async function walk(rel: string): Promise<void> {
+    const srcDir = join(srcRoot, rel);
+    let entries;
+    try {
+      entries = await readdir(srcDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) {
+          await walk(join(rel, entry.name));
+        }
+      } else if (entry.isFile() && ENV_PATTERN.test(entry.name)) {
+        const src = join(srcRoot, rel, entry.name);
+        const dst = join(dstRoot, rel, entry.name);
+        try {
+          await mkdir(join(dstRoot, rel), { recursive: true });
+          await copyFile(src, dst);
+        } catch {
+          // Skip files that can't be copied
+        }
+      }
+    }
+  }
+
+  await walk(".");
 }
 
 function parseBranchTimestamp(branchName: string, prefix: string): Date {
