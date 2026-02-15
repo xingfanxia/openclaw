@@ -1,6 +1,8 @@
 services:
   openclaw-gateway:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
+    env_file:
+      - ${OPENCLAW_CONFIG_DIR}/.env
     environment:
       HOME: /home/node
       TERM: xterm-256color
@@ -34,6 +36,8 @@ services:
 
   openclaw-cli:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
+    env_file:
+      - ${OPENCLAW_CONFIG_DIR}/.env
     environment:
       HOME: /home/node
       TERM: xterm-256color
