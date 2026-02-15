@@ -17,6 +17,7 @@ import {
 import {
   resolveGroupSessionKey,
   resolveSessionFilePath,
+  resolveSessionTranscriptPath,
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
@@ -315,8 +316,8 @@ export async function runPreparedReply(
       });
     }
   }
-  const sessionIdFinal = sessionId ?? crypto.randomUUID();
-  const sessionFile = resolveSessionFilePath(sessionIdFinal, sessionEntry);
+  let sessionIdFinal = sessionId ?? crypto.randomUUID();
+  let sessionFile = resolveSessionFilePath(sessionIdFinal, sessionEntry);
   const queueBodyBase = baseBodyForPrompt;
   const queuedBody = mediaNote
     ? [mediaNote, mediaReplyHint, queueBodyBase].filter(Boolean).join("\n").trim()
@@ -335,9 +336,30 @@ export async function runPreparedReply(
     const aborted = abortEmbeddedPiRun(sessionIdFinal);
     logVerbose(`Interrupting ${sessionLaneKey} (cleared ${cleared}, aborted=${aborted})`);
   }
-  const queueKey = sessionKey ?? sessionIdFinal;
-  const isActive = isEmbeddedPiRunActive(sessionIdFinal);
-  const isStreaming = isEmbeddedPiRunStreaming(sessionIdFinal);
+  const parentSessionId = sessionIdFinal;
+  const isActiveParent = isEmbeddedPiRunActive(parentSessionId);
+  const shouldParallelFork = resolvedQueue.mode === "parallel" && isActiveParent;
+  let runSessionEntry = sessionEntry;
+  let runSessionStore = sessionStore;
+  let runSessionKey: string | undefined = sessionKey;
+  let runStorePath = storePath;
+  let runIsNewSession = isNewSession;
+  if (shouldParallelFork) {
+    const forkedSessionId = crypto.randomUUID();
+    sessionIdFinal = forkedSessionId;
+    sessionFile = resolveSessionTranscriptPath(sessionIdFinal, agentId, sessionCtx.MessageThreadId);
+    runSessionEntry = undefined;
+    runSessionStore = undefined;
+    runSessionKey = undefined;
+    runStorePath = undefined;
+    runIsNewSession = true;
+    logVerbose(
+      `Parallel queue mode: forking active session ${parentSessionId} -> ${forkedSessionId}`,
+    );
+  }
+  const queueKey = runSessionKey ?? sessionIdFinal;
+  const isActive = shouldParallelFork ? false : isActiveParent;
+  const isStreaming = shouldParallelFork ? false : isEmbeddedPiRunStreaming(parentSessionId);
   const shouldSteer = resolvedQueue.mode === "steer" || resolvedQueue.mode === "steer-backlog";
   const shouldFollowup =
     resolvedQueue.mode === "followup" ||
@@ -369,7 +391,7 @@ export async function runPreparedReply(
       agentId,
       agentDir,
       sessionId: sessionIdFinal,
-      sessionKey,
+      sessionKey: runSessionKey,
       messageProvider: sessionCtx.Provider?.trim().toLowerCase() || undefined,
       agentAccountId: sessionCtx.AccountId,
       groupId: resolveGroupSessionKey(sessionCtx)?.id ?? undefined,
@@ -417,14 +439,14 @@ export async function runPreparedReply(
     isStreaming,
     opts,
     typing,
-    sessionEntry,
-    sessionStore,
-    sessionKey,
-    storePath,
+    sessionEntry: runSessionEntry,
+    sessionStore: runSessionStore,
+    sessionKey: runSessionKey,
+    storePath: runStorePath,
     defaultModel,
     agentCfgContextTokens: agentCfg?.contextTokens,
     resolvedVerboseLevel: resolvedVerboseLevel ?? "off",
-    isNewSession,
+    isNewSession: runIsNewSession,
     blockStreamingEnabled,
     blockReplyChunking,
     resolvedBlockStreamingBreak,

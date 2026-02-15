@@ -95,6 +95,72 @@ describe("agentCliCommand", () => {
     }
   });
 
+  it("retries once on transient gateway close (1006) and succeeds", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-agent-cli-"));
+    const store = path.join(dir, "sessions.json");
+    mockConfig(store);
+
+    vi.mocked(callGateway)
+      .mockRejectedValueOnce(
+        new Error("gateway closed (1006 abnormal closure (no close frame)): no close reason"),
+      )
+      .mockResolvedValueOnce({
+        runId: "idem-1",
+        status: "ok",
+        result: {
+          payloads: [{ text: "hello-after-retry" }],
+          meta: { stub: true },
+        },
+      });
+
+    try {
+      vi.useFakeTimers();
+      const run = agentCliCommand({ message: "hi", to: "+1555" }, runtime);
+      await vi.runAllTimersAsync();
+      await run;
+
+      expect(callGateway).toHaveBeenCalledTimes(2);
+      expect(agentCommand).not.toHaveBeenCalled();
+      expect(runtime.log).toHaveBeenCalledWith("hello-after-retry");
+      expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("attempt 1"));
+      vi.useRealTimers();
+    } finally {
+      vi.useRealTimers();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back after transient gateway retry budget is exhausted", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-agent-cli-"));
+    const store = path.join(dir, "sessions.json");
+    mockConfig(store);
+
+    vi.mocked(callGateway).mockRejectedValue(
+      new Error("gateway closed (1006 abnormal closure (no close frame)): no close reason"),
+    );
+
+    vi.mocked(agentCommand).mockImplementationOnce(async (_opts, rt) => {
+      rt.log?.("local-after-retries");
+      return { payloads: [{ text: "local-after-retries" }], meta: { stub: true } };
+    });
+
+    try {
+      vi.useFakeTimers();
+      const run = agentCliCommand({ message: "hi", to: "+1555" }, runtime);
+      await vi.runAllTimersAsync();
+      await run;
+
+      expect(callGateway).toHaveBeenCalledTimes(11);
+      expect(agentCommand).toHaveBeenCalledTimes(1);
+      expect(runtime.log).toHaveBeenCalledWith("local-after-retries");
+      expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("falling back"));
+      vi.useRealTimers();
+    } finally {
+      vi.useRealTimers();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("skips gateway when --local is set", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-agent-cli-"));
     const store = path.join(dir, "sessions.json");

@@ -146,4 +146,87 @@ describe("queue followups", () => {
       expect(prompts.some((p) => p.includes("[Queue overflow]"))).toBe(true);
     });
   });
+
+  it("forks a parallel run instead of queueing when session is active", async () => {
+    await withTempHome(async (home) => {
+      vi.mocked(runEmbeddedPiAgent).mockImplementation(async () => makeResult("parallel"));
+      vi.mocked(isEmbeddedPiRunActive).mockReturnValue(true);
+      vi.mocked(isEmbeddedPiRunStreaming).mockReturnValue(false);
+
+      const cfg = makeCfg(home, {
+        mode: "parallel",
+      });
+
+      const res = await getReplyFromConfig(
+        { Body: "run in parallel", From: "+1003", To: "+2000" },
+        {},
+        cfg,
+      );
+
+      const text = Array.isArray(res) ? res[0]?.text : res?.text;
+      expect(text).toBe("parallel");
+      expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
+
+      const firstCall = vi.mocked(runEmbeddedPiAgent).mock.calls[0]?.[0];
+      expect(firstCall?.sessionKey).toBeUndefined();
+      expect(firstCall?.sessionId).toBeTruthy();
+    });
+  });
+
+  it("keeps first run active while serving a second message immediately in parallel mode", async () => {
+    await withTempHome(async (home) => {
+      let firstRunActive = false;
+      let releaseFirstRun: (() => void) | undefined;
+      const firstRunWait = new Promise<void>((resolve) => {
+        releaseFirstRun = resolve;
+      });
+
+      vi.mocked(isEmbeddedPiRunActive).mockImplementation(() => firstRunActive);
+      vi.mocked(isEmbeddedPiRunStreaming).mockReturnValue(false);
+      vi.mocked(runEmbeddedPiAgent).mockImplementation(async (params) => {
+        // Parent run keeps the lane busy; forked run should still complete immediately.
+        if (params.sessionKey) {
+          firstRunActive = true;
+          await firstRunWait;
+          firstRunActive = false;
+          return makeResult("first done");
+        }
+        return makeResult("second immediate");
+      });
+
+      const cfg = makeCfg(home, { mode: "parallel" });
+
+      const firstPromise = getReplyFromConfig(
+        { Body: "first", From: "+1004", To: "+2000", MessageSid: "m-first" },
+        {},
+        cfg,
+      );
+
+      await pollUntil(async () => (firstRunActive ? true : null), { timeoutMs: 2000 });
+
+      const second = await getReplyFromConfig(
+        { Body: "second", From: "+1004", To: "+2000", MessageSid: "m-second" },
+        {},
+        cfg,
+      );
+      const secondText = Array.isArray(second) ? second[0]?.text : second?.text;
+      expect(secondText).toBe("second immediate");
+
+      const firstSettledEarly = await Promise.race([
+        firstPromise.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 50)),
+      ]);
+      expect(firstSettledEarly).toBe(false);
+
+      releaseFirstRun?.();
+      const first = await firstPromise;
+      const firstText = Array.isArray(first) ? first[0]?.text : first?.text;
+      expect(firstText).toBe("first done");
+
+      expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(2);
+      const secondCall = vi.mocked(runEmbeddedPiAgent).mock.calls[1]?.[0];
+      expect(secondCall?.sessionKey).toBeUndefined();
+      expect(secondCall?.sessionId).toBeTruthy();
+    });
+  });
 });

@@ -112,6 +112,7 @@ export const QueueModeSchema = z.union([
   z.literal("steer+backlog"),
   z.literal("queue"),
   z.literal("interrupt"),
+  z.literal("parallel"),
 ]);
 export const QueueDropSchema = z.union([
   z.literal("old"),
@@ -310,12 +311,14 @@ export const QueueModeBySurfaceSchema = z
     telegram: QueueModeSchema.optional(),
     discord: QueueModeSchema.optional(),
     irc: QueueModeSchema.optional(),
+    googlechat: QueueModeSchema.optional(),
     slack: QueueModeSchema.optional(),
     mattermost: QueueModeSchema.optional(),
     signal: QueueModeSchema.optional(),
     imessage: QueueModeSchema.optional(),
     msteams: QueueModeSchema.optional(),
     webchat: QueueModeSchema.optional(),
+    feishu: QueueModeSchema.optional(),
   })
   .strict()
   .optional();

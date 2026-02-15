@@ -63,7 +63,8 @@ export type SessionEntry = {
     | "steer-backlog"
     | "steer+backlog"
     | "queue"
-    | "interrupt";
+    | "interrupt"
+    | "parallel";
   queueDebounceMs?: number;
   queueCap?: number;
   queueDrop?: "old" | "new" | "summarize";

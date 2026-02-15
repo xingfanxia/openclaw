@@ -535,7 +535,7 @@ function buildChatCommands(): ChatCommandDefinition[] {
           name: "mode",
           description: "queue mode",
           type: "string",
-          choices: ["steer", "interrupt", "followup", "collect", "steer-backlog"],
+          choices: ["steer", "interrupt", "parallel", "followup", "collect", "steer-backlog"],
         },
         {
           name: "debounce",

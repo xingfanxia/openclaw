@@ -5,7 +5,8 @@ export type QueueMode =
   | "steer-backlog"
   | "steer+backlog"
   | "queue"
-  | "interrupt";
+  | "interrupt"
+  | "parallel";
 export type QueueDropPolicy = "old" | "new" | "summarize";
 
 export type QueueModeByProvider = {
@@ -15,8 +16,10 @@ export type QueueModeByProvider = {
   irc?: QueueMode;
   googlechat?: QueueMode;
   slack?: QueueMode;
+  mattermost?: QueueMode;
   signal?: QueueMode;
   imessage?: QueueMode;
   msteams?: QueueMode;
   webchat?: QueueMode;
+  feishu?: QueueMode;
 };

@@ -31,6 +31,15 @@ type GatewayAgentResponse = {
   result?: AgentGatewayResult;
 };
 
+const GATEWAY_RETRY_MAX_WINDOW_MS = 45_000;
+const GATEWAY_RETRY_BASE_DELAY_MS = 400;
+const GATEWAY_RETRY_MAX_DELAY_MS = 8_000;
+const TRANSIENT_GATEWAY_ERROR_PATTERNS = [
+  /gateway closed \(1006\b/i,
+  /gateway closed \(1012\b/i,
+  /gateway timeout after /i,
+];
+
 export type AgentCliOpts = {
   message: string;
   agent?: string;
@@ -51,6 +60,25 @@ export type AgentCliOpts = {
   extraSystemPrompt?: string;
   local?: boolean;
 };
+
+function isTransientGatewayError(err: unknown): boolean {
+  const message = String(err ?? "");
+  return TRANSIENT_GATEWAY_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function computeGatewayRetryDelayMs(attempt: number, elapsedMs: number): number {
+  const budgetLeft = Math.max(0, GATEWAY_RETRY_MAX_WINDOW_MS - elapsedMs);
+  if (budgetLeft <= 0) {
+    return 0;
+  }
+  const expo = Math.min(attempt, 8);
+  const candidate = Math.min(GATEWAY_RETRY_MAX_DELAY_MS, GATEWAY_RETRY_BASE_DELAY_MS * 2 ** expo);
+  return Math.max(1, Math.min(candidate, budgetLeft));
+}
 
 function parseTimeoutSeconds(opts: { cfg: ReturnType<typeof loadConfig>; timeout?: string }) {
   const raw =
@@ -183,7 +211,27 @@ export async function agentCliCommand(opts: AgentCliOpts, runtime: RuntimeEnv, d
   }
 
   try {
-    return await agentViaGatewayCommand(opts, runtime);
+    let attempt = 0;
+    const retryStartedAt = Date.now();
+    while (true) {
+      try {
+        return await agentViaGatewayCommand(opts, runtime);
+      } catch (err) {
+        const elapsedMs = Date.now() - retryStartedAt;
+        if (!isTransientGatewayError(err) || elapsedMs >= GATEWAY_RETRY_MAX_WINDOW_MS) {
+          throw err;
+        }
+        const delayMs = computeGatewayRetryDelayMs(attempt, elapsedMs);
+        if (delayMs <= 0) {
+          throw err;
+        }
+        attempt += 1;
+        runtime.error?.(
+          `Gateway agent transient error; retrying (attempt ${attempt}) in ${delayMs}ms: ${String(err)}`,
+        );
+        await sleep(delayMs);
+      }
+    }
   } catch (err) {
     runtime.error?.(`Gateway agent failed; falling back to embedded: ${String(err)}`);
     return await agentCommand(localOpts, runtime, deps);

@@ -11,6 +11,14 @@ export function normalizeQueueMode(raw?: string): QueueMode | undefined {
   if (cleaned === "interrupt" || cleaned === "interrupts" || cleaned === "abort") {
     return "interrupt";
   }
+  if (
+    cleaned === "parallel" ||
+    cleaned === "fork" ||
+    cleaned === "concurrent" ||
+    cleaned === "concurrency"
+  ) {
+    return "parallel";
+  }
   if (cleaned === "steer" || cleaned === "steering") {
     return "steer";
   }

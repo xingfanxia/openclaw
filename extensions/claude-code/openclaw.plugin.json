@@ -54,6 +54,18 @@
             "type": "string",
             "enum": ["read-only", "workspace-write", "danger-full-access"],
             "description": "Sandbox mode for Codex sessions."
+          },
+          "timeoutMs": {
+            "type": "number",
+            "description": "Foreground Codex timeout in milliseconds."
+          },
+          "backgroundTimeoutMs": {
+            "type": "number",
+            "description": "Default timeout in milliseconds for background Codex jobs."
+          },
+          "maxTimeoutMs": {
+            "type": "number",
+            "description": "Maximum allowed Codex timeout in milliseconds (caps per-call overrides)."
           }
         }
       },

@@ -150,6 +150,18 @@ describe("directive parsing", () => {
     expect(res.cleaned).toBe("please now");
   });
 
+  it("matches queue parallel mode and aliases", () => {
+    const parallel = extractQueueDirective("please /queue parallel now");
+    expect(parallel.hasDirective).toBe(true);
+    expect(parallel.queueMode).toBe("parallel");
+    expect(parallel.cleaned).toBe("please now");
+
+    const forkAlias = extractQueueDirective("please /queue fork now");
+    expect(forkAlias.hasDirective).toBe(true);
+    expect(forkAlias.queueMode).toBe("parallel");
+    expect(forkAlias.cleaned).toBe("please now");
+  });
+
   it("preserves spacing when stripping think directives before paths", () => {
     const res = extractThinkDirective("thats not /think high/tmp/hello");
     expect(res.hasDirective).toBe(true);

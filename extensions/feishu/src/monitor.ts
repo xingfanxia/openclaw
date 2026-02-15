@@ -30,10 +30,10 @@ async function fetchBotOpenId(account: ResolvedFeishuAccount): Promise<string | 
 
 /**
  * Register common event handlers on an EventDispatcher.
- * When fireAndForget is true (webhook mode), message handling is not awaited
- * to avoid blocking the HTTP response (Lark requires <3s response).
+ * When fireAndForget is true, message handling is not awaited so one slow
+ * inbound run does not block subsequent events on the same connection.
  */
-function registerEventHandlers(
+export function registerEventHandlers(
   eventDispatcher: Lark.EventDispatcher,
   context: {
     cfg: ClawdbotConfig;
@@ -121,7 +121,9 @@ async function monitorSingleAccount(params: MonitorAccountParams): Promise<void>
     accountId,
     runtime,
     chatHistories,
-    fireAndForget: connectionMode === "webhook",
+    // Always dispatch inbound processing asynchronously so one long-running
+    // agent turn cannot stall later Feishu messages.
+    fireAndForget: true,
   });
 
   if (connectionMode === "webhook") {
