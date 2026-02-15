@@ -72,6 +72,37 @@ describe("acquireSessionWriteLock", () => {
     }
   });
 
+  it("reclaims lock files when pid is reused after restart", async () => {
+    if (process.platform !== "linux") {
+      expect(true).toBe(true);
+      return;
+    }
+
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-lock-"));
+    try {
+      const sessionFile = path.join(root, "sessions.json");
+      const lockPath = `${sessionFile}.lock`;
+      await fs.writeFile(
+        lockPath,
+        JSON.stringify({ pid: process.pid, createdAt: "2001-01-01T00:00:00.000Z" }, null, 2),
+        "utf8",
+      );
+
+      const lock = await acquireSessionWriteLock({
+        sessionFile,
+        timeoutMs: 500,
+        staleMs: Number.MAX_SAFE_INTEGER,
+      });
+      const raw = await fs.readFile(lockPath, "utf8");
+      const payload = JSON.parse(raw) as { pid: number };
+
+      expect(payload.pid).toBe(process.pid);
+      await lock.release();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("removes held locks on termination signals", async () => {
     const signals = ["SIGINT", "SIGTERM", "SIGQUIT", "SIGABRT"] as const;
     for (const signal of signals) {

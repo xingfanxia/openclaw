@@ -5,6 +5,7 @@ import path from "node:path";
 type LockFilePayload = {
   pid: number;
   createdAt: string;
+  startTime?: number;
 };
 
 type HeldLock = {
@@ -27,6 +28,22 @@ function isAlive(pid: number): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+function readLinuxStartTime(pid: number): number | null {
+  try {
+    const raw = fsSync.readFileSync(`/proc/${pid}/stat`, "utf8").trim();
+    const closeParen = raw.lastIndexOf(")");
+    if (closeParen < 0) {
+      return null;
+    }
+    const rest = raw.slice(closeParen + 1).trim();
+    const fields = rest.split(/\s+/);
+    const startTime = Number.parseInt(fields[19] ?? "", 10);
+    return Number.isFinite(startTime) ? startTime : null;
+  } catch {
+    return null;
   }
 }
 
@@ -103,7 +120,11 @@ async function readLockPayload(lockPath: string): Promise<LockFilePayload | null
     if (typeof parsed.createdAt !== "string") {
       return null;
     }
-    return { pid: parsed.pid, createdAt: parsed.createdAt };
+    const payload: LockFilePayload = { pid: parsed.pid, createdAt: parsed.createdAt };
+    if (typeof parsed.startTime === "number" && Number.isFinite(parsed.startTime)) {
+      payload.startTime = parsed.startTime;
+    }
+    return payload;
   } catch {
     return null;
   }
@@ -157,10 +178,14 @@ export async function acquireSessionWriteLock(params: {
     attempt += 1;
     try {
       const handle = await fs.open(lockPath, "wx");
-      await handle.writeFile(
-        JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }, null, 2),
-        "utf8",
-      );
+      const payload: LockFilePayload = { pid: process.pid, createdAt: new Date().toISOString() };
+      if (process.platform === "linux") {
+        const startTime = readLinuxStartTime(process.pid);
+        if (typeof startTime === "number" && Number.isFinite(startTime)) {
+          payload.startTime = startTime;
+        }
+      }
+      await handle.writeFile(JSON.stringify(payload, null, 2), "utf8");
       HELD_LOCKS.set(normalizedSessionFile, { count: 1, handle, lockPath });
       return {
         release: async () => {
@@ -186,7 +211,19 @@ export async function acquireSessionWriteLock(params: {
       const createdAt = payload?.createdAt ? Date.parse(payload.createdAt) : NaN;
       const stale = !Number.isFinite(createdAt) || Date.now() - createdAt > staleMs;
       const alive = payload?.pid ? isAlive(payload.pid) : false;
-      if (stale || !alive) {
+      let recycledPid = false;
+      if (alive && payload?.pid && process.platform === "linux") {
+        const currentStartTime = readLinuxStartTime(payload.pid);
+        if (currentStartTime != null) {
+          if (typeof payload.startTime === "number" && Number.isFinite(payload.startTime)) {
+            recycledPid = currentStartTime !== payload.startTime;
+          } else if (payload.pid === process.pid && Number.isFinite(createdAt)) {
+            const processStartedAt = Date.now() - process.uptime() * 1000;
+            recycledPid = createdAt < processStartedAt - 1000;
+          }
+        }
+      }
+      if (stale || !alive || recycledPid) {
         await fs.rm(lockPath, { force: true });
         continue;
       }
