@@ -62,7 +62,12 @@ export type AgentCliOpts = {
 };
 
 function isTransientGatewayError(err: unknown): boolean {
-  const message = String(err ?? "");
+  const message =
+    typeof err === "string"
+      ? err
+      : err instanceof Error
+        ? err.message
+        : JSON.stringify(err ?? "");
   return TRANSIENT_GATEWAY_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 
