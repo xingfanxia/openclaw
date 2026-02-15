@@ -21,4 +21,25 @@ describe("web search provider config", () => {
 
     expect(res.ok).toBe(true);
   });
+
+  it("accepts tavily provider and config", () => {
+    const res = validateConfigObject({
+      tools: {
+        web: {
+          search: {
+            enabled: true,
+            provider: "tavily",
+            tavily: {
+              apiKey: "tvly-test-key",
+              searchDepth: "basic",
+              topic: "general",
+              includeAnswer: true,
+            },
+          },
+        },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
 });

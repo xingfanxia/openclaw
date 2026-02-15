@@ -476,7 +476,8 @@ const FIELD_HELP: Record<string, string> = {
     'Text suffix for cross-context markers (supports "{channel}").',
   "tools.message.broadcast.enabled": "Enable broadcast action (default: true).",
   "tools.web.search.enabled": "Enable the web_search tool (requires a provider API key).",
-  "tools.web.search.provider": 'Search provider ("brave" or "perplexity").',
+  "tools.web.search.provider":
+    'Default search provider ("brave", "perplexity", "grok", or "tavily").',
   "tools.web.search.apiKey": "Brave Search API key (fallback: BRAVE_API_KEY env var).",
   "tools.web.search.maxResults": "Default number of results to return (1-10).",
   "tools.web.search.timeoutSeconds": "Timeout in seconds for web_search requests.",
@@ -487,6 +488,16 @@ const FIELD_HELP: Record<string, string> = {
     "Perplexity base URL override (default: https://openrouter.ai/api/v1 or https://api.perplexity.ai).",
   "tools.web.search.perplexity.model":
     'Perplexity model override (default: "perplexity/sonar-pro").',
+  "tools.web.search.grok.apiKey": "xAI API key for Grok (fallback: XAI_API_KEY env var).",
+  "tools.web.search.grok.model": 'Grok model override (default: "grok-4-1-fast").',
+  "tools.web.search.grok.inlineCitations":
+    "Include inline citations in Grok content output when available.",
+  "tools.web.search.tavily.apiKey": "Tavily API key (fallback: TAVILY_API_KEY env var).",
+  "tools.web.search.tavily.searchDepth": 'Tavily search depth (for example "basic" or "advanced").',
+  "tools.web.search.tavily.topic":
+    'Tavily topic filter (for example "general", "news", or "finance").',
+  "tools.web.search.tavily.includeAnswer":
+    "When true, include Tavily's generated answer summary in tool output.",
   "tools.web.fetch.enabled": "Enable the web_fetch tool (lightweight HTTP fetch).",
   "tools.web.fetch.maxChars": "Max characters returned by web_fetch (truncated).",
   "tools.web.fetch.maxCharsCap":

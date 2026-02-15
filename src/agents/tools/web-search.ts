@@ -4,6 +4,7 @@ import type { AnyAgentTool } from "./common.js";
 import { formatCliCommand } from "../../cli/command-format.js";
 import { wrapWebContent } from "../../security/external-content.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
+import { optionalStringEnum } from "../schema/typebox.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
 import {
   CacheEntry,
@@ -18,7 +19,7 @@ import {
   writeCache,
 } from "./web-shared.js";
 
-const SEARCH_PROVIDERS = ["brave", "perplexity", "grok"] as const;
+const SEARCH_PROVIDERS = ["brave", "perplexity", "grok", "tavily"] as const;
 const DEFAULT_SEARCH_COUNT = 5;
 const MAX_SEARCH_COUNT = 10;
 
@@ -32,9 +33,14 @@ const OPENROUTER_KEY_PREFIXES = ["sk-or-"];
 const XAI_API_ENDPOINT = "https://api.x.ai/v1/responses";
 const DEFAULT_GROK_MODEL = "grok-4-1-fast";
 
+const TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search";
+const DEFAULT_TAVILY_SEARCH_DEPTH = "basic";
+const DEFAULT_TAVILY_TOPIC = "general";
+
 const SEARCH_CACHE = new Map<string, CacheEntry<Record<string, unknown>>>();
 const BRAVE_FRESHNESS_SHORTCUTS = new Set(["pd", "pw", "pm", "py"]);
 const BRAVE_FRESHNESS_RANGE = /^(\d{4}-\d{2}-\d{2})to(\d{4}-\d{2}-\d{2})$/;
+const REGION_DISPLAY_NAMES = new Intl.DisplayNames(["en"], { type: "region" });
 
 const WebSearchSchema = Type.Object({
   query: Type.String({ description: "Search query string." }),
@@ -67,6 +73,10 @@ const WebSearchSchema = Type.Object({
         "Filter results by discovery time (Brave only). Values: 'pd' (past 24h), 'pw' (past week), 'pm' (past month), 'py' (past year), or date range 'YYYY-MM-DDtoYYYY-MM-DD'.",
     }),
   ),
+  provider: optionalStringEnum(SEARCH_PROVIDERS, {
+    description:
+      "Override search provider for this call. Values: 'brave' (structured results), 'tavily' (AI-optimized results with relevance scores), 'perplexity' (AI-synthesized answers), 'grok' (xAI search). If omitted, uses the configured default.",
+  }),
 });
 
 type WebSearchConfig = NonNullable<OpenClawConfig["tools"]>["web"] extends infer Web
@@ -133,6 +143,27 @@ type PerplexitySearchResponse = {
     };
   }>;
   citations?: string[];
+};
+
+type TavilyConfig = {
+  apiKey?: string;
+  searchDepth?: string;
+  topic?: string;
+  includeAnswer?: boolean;
+};
+
+type TavilySearchResult = {
+  title?: string;
+  url?: string;
+  content?: string;
+  score?: number;
+};
+
+type TavilySearchResponse = {
+  query?: string;
+  answer?: string;
+  results?: TavilySearchResult[];
+  response_time?: number;
 };
 
 type PerplexityBaseUrlHint = "direct" | "openrouter";
@@ -205,6 +236,14 @@ function missingSearchKeyPayload(provider: (typeof SEARCH_PROVIDERS)[number]) {
       docs: "https://docs.openclaw.ai/tools/web",
     };
   }
+  if (provider === "tavily") {
+    return {
+      error: "missing_tavily_api_key",
+      message:
+        "web_search (tavily) needs a Tavily API key. Set TAVILY_API_KEY in the Gateway environment, or configure tools.web.search.tavily.apiKey.",
+      docs: "https://docs.openclaw.ai/tools/web",
+    };
+  }
   return {
     error: "missing_brave_api_key",
     message: `web_search needs a Brave Search API key. Run \`${formatCliCommand("openclaw configure --section web")}\` to store it, or set BRAVE_API_KEY in the Gateway environment.`,
@@ -222,6 +261,9 @@ function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDE
   }
   if (raw === "grok") {
     return "grok";
+  }
+  if (raw === "tavily") {
+    return "tavily";
   }
   if (raw === "brave") {
     return "brave";
@@ -365,6 +407,62 @@ function resolveGrokModel(grok?: GrokConfig): string {
 
 function resolveGrokInlineCitations(grok?: GrokConfig): boolean {
   return grok?.inlineCitations === true;
+}
+
+function resolveTavilyConfig(search?: WebSearchConfig): TavilyConfig {
+  if (!search || typeof search !== "object") {
+    return {};
+  }
+  const tavily = "tavily" in search ? search.tavily : undefined;
+  if (!tavily || typeof tavily !== "object") {
+    return {};
+  }
+  return tavily as TavilyConfig;
+}
+
+function resolveTavilyApiKey(tavily?: TavilyConfig): string | undefined {
+  const fromConfig = normalizeApiKey(tavily?.apiKey);
+  if (fromConfig) {
+    return fromConfig;
+  }
+  const fromEnv = normalizeApiKey(process.env.TAVILY_API_KEY);
+  return fromEnv || undefined;
+}
+
+function resolveTavilySearchDepth(tavily?: TavilyConfig): string {
+  const fromConfig =
+    tavily && "searchDepth" in tavily && typeof tavily.searchDepth === "string"
+      ? tavily.searchDepth.trim()
+      : "";
+  return fromConfig || DEFAULT_TAVILY_SEARCH_DEPTH;
+}
+
+function resolveTavilyTopic(tavily?: TavilyConfig): string {
+  const fromConfig =
+    tavily && "topic" in tavily && typeof tavily.topic === "string" ? tavily.topic.trim() : "";
+  return fromConfig || DEFAULT_TAVILY_TOPIC;
+}
+
+function resolveTavilyIncludeAnswer(tavily?: TavilyConfig): boolean {
+  return tavily?.includeAnswer === true;
+}
+
+function resolveTavilyCountry(country?: string): string | undefined {
+  const trimmed = typeof country === "string" ? country.trim() : "";
+  if (!trimmed || trimmed.toLowerCase() === "all") {
+    return undefined;
+  }
+  if (/^[a-z]{2}$/i.test(trimmed)) {
+    try {
+      const expanded = REGION_DISPLAY_NAMES.of(trimmed.toUpperCase());
+      if (expanded && typeof expanded === "string") {
+        return expanded.toLowerCase();
+      }
+    } catch {
+      // Fall back to caller-provided value.
+    }
+  }
+  return trimmed.toLowerCase();
 }
 
 function resolveSearchCount(value: unknown, fallback: number): number {
@@ -524,6 +622,65 @@ async function runGrokSearch(params: {
   return { content, citations, inlineCitations };
 }
 
+async function runTavilySearch(params: {
+  query: string;
+  apiKey: string;
+  maxResults: number;
+  searchDepth: string;
+  topic: string;
+  includeAnswer: boolean;
+  timeoutSeconds: number;
+  country?: string;
+}): Promise<{
+  results: Array<{
+    title: string;
+    url: string;
+    content: string;
+    score: number;
+    siteName?: string;
+  }>;
+  answer?: string;
+}> {
+  const body: Record<string, unknown> = {
+    query: params.query,
+    max_results: params.maxResults,
+    search_depth: params.searchDepth,
+    topic: params.topic,
+    include_answer: params.includeAnswer,
+  };
+  if (params.country) {
+    body.country = params.country;
+  }
+
+  const res = await fetch(TAVILY_SEARCH_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${params.apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: withTimeout(undefined, params.timeoutSeconds * 1000),
+  });
+
+  if (!res.ok) {
+    const detail = await readResponseText(res);
+    throw new Error(`Tavily API error (${res.status}): ${detail || res.statusText}`);
+  }
+
+  const data = (await res.json()) as TavilySearchResponse;
+  const rawResults = Array.isArray(data.results) ? data.results : [];
+  const results = rawResults.map((entry) => ({
+    title: entry.title ? wrapWebContent(entry.title, "web_search") : "",
+    url: entry.url ?? "",
+    content: entry.content ? wrapWebContent(entry.content, "web_search") : "",
+    score: typeof entry.score === "number" ? entry.score : 0,
+    siteName: resolveSiteName(entry.url) || undefined,
+  }));
+  const answer = typeof data.answer === "string" && data.answer ? data.answer : undefined;
+
+  return { results, answer };
+}
+
 async function runWebSearch(params: {
   query: string;
   count: number;
@@ -539,13 +696,18 @@ async function runWebSearch(params: {
   perplexityModel?: string;
   grokModel?: string;
   grokInlineCitations?: boolean;
+  tavilySearchDepth?: string;
+  tavilyTopic?: string;
+  tavilyIncludeAnswer?: boolean;
 }): Promise<Record<string, unknown>> {
   const cacheKey = normalizeCacheKey(
     params.provider === "brave"
       ? `${params.provider}:${params.query}:${params.count}:${params.country || "default"}:${params.search_lang || "default"}:${params.ui_lang || "default"}:${params.freshness || "default"}`
       : params.provider === "perplexity"
         ? `${params.provider}:${params.query}:${params.perplexityBaseUrl ?? DEFAULT_PERPLEXITY_BASE_URL}:${params.perplexityModel ?? DEFAULT_PERPLEXITY_MODEL}`
-        : `${params.provider}:${params.query}:${params.grokModel ?? DEFAULT_GROK_MODEL}:${String(params.grokInlineCitations ?? false)}`,
+        : params.provider === "tavily"
+          ? `${params.provider}:${params.query}:${params.count}:${params.tavilySearchDepth ?? DEFAULT_TAVILY_SEARCH_DEPTH}:${params.tavilyTopic ?? DEFAULT_TAVILY_TOPIC}:${resolveTavilyCountry(params.country) || "default"}`
+          : `${params.provider}:${params.query}:${params.grokModel ?? DEFAULT_GROK_MODEL}:${String(params.grokInlineCitations ?? false)}`,
   );
   const cached = readCache(SEARCH_CACHE, cacheKey);
   if (cached) {
@@ -593,6 +755,32 @@ async function runWebSearch(params: {
       citations,
       inlineCitations,
     };
+    writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
+
+  if (params.provider === "tavily") {
+    const { results, answer } = await runTavilySearch({
+      query: params.query,
+      apiKey: params.apiKey,
+      maxResults: params.count,
+      searchDepth: params.tavilySearchDepth ?? DEFAULT_TAVILY_SEARCH_DEPTH,
+      topic: params.tavilyTopic ?? DEFAULT_TAVILY_TOPIC,
+      includeAnswer: params.tavilyIncludeAnswer ?? false,
+      timeoutSeconds: params.timeoutSeconds,
+      country: resolveTavilyCountry(params.country),
+    });
+
+    const payload: Record<string, unknown> = {
+      query: params.query,
+      provider: params.provider,
+      count: results.length,
+      tookMs: Date.now() - start,
+      results,
+    };
+    if (answer) {
+      payload.answer = wrapWebContent(answer);
+    }
     writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
     return payload;
   }
@@ -667,16 +855,19 @@ export function createWebSearchTool(options?: {
     return null;
   }
 
-  const provider = resolveSearchProvider(search);
+  const defaultProvider = resolveSearchProvider(search);
   const perplexityConfig = resolvePerplexityConfig(search);
   const grokConfig = resolveGrokConfig(search);
+  const tavilyConfig = resolveTavilyConfig(search);
 
   const description =
-    provider === "perplexity"
-      ? "Search the web using Perplexity Sonar (direct or via OpenRouter). Returns AI-synthesized answers with citations from real-time web search."
-      : provider === "grok"
-        ? "Search the web using xAI Grok. Returns AI-synthesized answers with citations from real-time web search."
-        : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
+    "Search the web for current information. Supports multiple providers via the optional 'provider' parameter: " +
+    "'brave' (structured results with titles, URLs, snippets), " +
+    "'tavily' (AI-optimized results with relevance scores), " +
+    "'perplexity' (AI-synthesized answers with citations), " +
+    "'grok' (xAI search with citations). " +
+    `Default provider: ${defaultProvider}. ` +
+    "Use different providers on the same query to cross-reference results.";
 
   return {
     label: "Web Search",
@@ -684,6 +875,12 @@ export function createWebSearchTool(options?: {
     description,
     parameters: WebSearchSchema,
     execute: async (_toolCallId, args) => {
+      const params = args as Record<string, unknown>;
+      const providerOverride = readStringParam(params, "provider");
+      const provider = providerOverride
+        ? resolveSearchProvider({ provider: providerOverride } as WebSearchConfig)
+        : defaultProvider;
+
       const perplexityAuth =
         provider === "perplexity" ? resolvePerplexityApiKey(perplexityConfig) : undefined;
       const apiKey =
@@ -691,12 +888,13 @@ export function createWebSearchTool(options?: {
           ? perplexityAuth?.apiKey
           : provider === "grok"
             ? resolveGrokApiKey(grokConfig)
-            : resolveSearchApiKey(search);
+            : provider === "tavily"
+              ? resolveTavilyApiKey(tavilyConfig)
+              : resolveSearchApiKey(search);
 
       if (!apiKey) {
         return jsonResult(missingSearchKeyPayload(provider));
       }
-      const params = args as Record<string, unknown>;
       const query = readStringParam(params, "query", { required: true });
       const count =
         readNumberParam(params, "count", { integer: true }) ?? search?.maxResults ?? undefined;
@@ -739,6 +937,9 @@ export function createWebSearchTool(options?: {
         perplexityModel: resolvePerplexityModel(perplexityConfig),
         grokModel: resolveGrokModel(grokConfig),
         grokInlineCitations: resolveGrokInlineCitations(grokConfig),
+        tavilySearchDepth: resolveTavilySearchDepth(tavilyConfig),
+        tavilyTopic: resolveTavilyTopic(tavilyConfig),
+        tavilyIncludeAnswer: resolveTavilyIncludeAnswer(tavilyConfig),
       });
       return jsonResult(result);
     },
@@ -755,4 +956,9 @@ export const __testing = {
   resolveGrokModel,
   resolveGrokInlineCitations,
   extractGrokContent,
+  resolveTavilyApiKey,
+  resolveTavilySearchDepth,
+  resolveTavilyTopic,
+  resolveTavilyIncludeAnswer,
+  resolveTavilyCountry,
 } as const;

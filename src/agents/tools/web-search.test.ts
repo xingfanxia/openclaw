@@ -11,6 +11,11 @@ const {
   resolveGrokModel,
   resolveGrokInlineCitations,
   extractGrokContent,
+  resolveTavilyApiKey,
+  resolveTavilySearchDepth,
+  resolveTavilyTopic,
+  resolveTavilyIncludeAnswer,
+  resolveTavilyCountry,
 } = __testing;
 
 describe("web_search perplexity baseUrl defaults", () => {
@@ -206,5 +211,46 @@ describe("web_search grok response parsing", () => {
     const result = extractGrokContent({});
     expect(result.text).toBeUndefined();
     expect(result.annotationCitations).toEqual([]);
+  });
+});
+
+describe("web_search tavily config resolution", () => {
+  it("uses config apiKey when provided", () => {
+    expect(resolveTavilyApiKey({ apiKey: "tvly-test-key" })).toBe("tvly-test-key");
+  });
+
+  it("returns undefined when no apiKey is available", () => {
+    const previous = process.env.TAVILY_API_KEY;
+    try {
+      delete process.env.TAVILY_API_KEY;
+      expect(resolveTavilyApiKey({})).toBeUndefined();
+      expect(resolveTavilyApiKey(undefined)).toBeUndefined();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TAVILY_API_KEY;
+      } else {
+        process.env.TAVILY_API_KEY = previous;
+      }
+    }
+  });
+
+  it("uses configured search depth and topic with sensible defaults", () => {
+    expect(resolveTavilySearchDepth(undefined)).toBe("basic");
+    expect(resolveTavilySearchDepth({ searchDepth: "advanced" })).toBe("advanced");
+    expect(resolveTavilyTopic(undefined)).toBe("general");
+    expect(resolveTavilyTopic({ topic: "news" })).toBe("news");
+  });
+
+  it("defaults includeAnswer to false and respects explicit true", () => {
+    expect(resolveTavilyIncludeAnswer(undefined)).toBe(false);
+    expect(resolveTavilyIncludeAnswer({})).toBe(false);
+    expect(resolveTavilyIncludeAnswer({ includeAnswer: true })).toBe(true);
+  });
+
+  it("normalizes country for Tavily", () => {
+    expect(resolveTavilyCountry("US")).toBe("united states");
+    expect(resolveTavilyCountry("news")).toBe("news");
+    expect(resolveTavilyCountry("ALL")).toBeUndefined();
+    expect(resolveTavilyCountry(undefined)).toBeUndefined();
   });
 });
