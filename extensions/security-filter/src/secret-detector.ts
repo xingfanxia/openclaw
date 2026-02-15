@@ -63,9 +63,7 @@ export class SecretDetector {
   ) {
     this.allowlist = new Set(allowlist);
 
-    const basePatterns = DEFAULT_PATTERNS.filter(
-      (p) => !this.allowlist.has(p.name),
-    );
+    const basePatterns = DEFAULT_PATTERNS.filter((p) => !this.allowlist.has(p.name));
 
     const userPatterns: SecretPattern[] = customPatterns
       .filter((p) => !this.allowlist.has(p.name))

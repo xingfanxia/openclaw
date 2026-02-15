@@ -1,6 +1,6 @@
-import type { SecretDetector } from "../secret-detector.js";
-import type { Redactor } from "../redactor.js";
 import type { AuditLog } from "../audit-log.js";
+import type { Redactor } from "../redactor.js";
+import type { SecretDetector } from "../secret-detector.js";
 
 interface MessageSendingEvent {
   to: string;
@@ -22,10 +22,7 @@ export function createMessageFilter(
   redactor: Redactor,
   auditLog: AuditLog,
 ): (event: MessageSendingEvent, ctx: MessageSendingContext) => MessageFilterResult | void {
-  return (
-    event: MessageSendingEvent,
-    ctx: MessageSendingContext,
-  ): MessageFilterResult | void => {
+  return (event: MessageSendingEvent, ctx: MessageSendingContext): MessageFilterResult | void => {
     const detections = detector.detect(event.content);
 
     if (detections.length === 0) {
@@ -35,13 +32,7 @@ export function createMessageFilter(
     const result = redactor.process(event.content, detections);
     const patternNames = [...new Set(detections.map((d) => d.patternName))];
 
-    auditLog.log(
-      result.action,
-      redactor.getMode(),
-      patternNames,
-      ctx.channelId,
-      event.content,
-    );
+    auditLog.log(result.action, redactor.getMode(), patternNames, ctx.channelId, event.content);
 
     switch (result.action) {
       case "blocked":

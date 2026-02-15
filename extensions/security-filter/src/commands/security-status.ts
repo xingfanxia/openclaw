@@ -1,6 +1,6 @@
-import type { SecretDetector } from "../secret-detector.js";
-import type { Redactor } from "../redactor.js";
 import type { AuditLog } from "../audit-log.js";
+import type { Redactor } from "../redactor.js";
+import type { SecretDetector } from "../secret-detector.js";
 
 interface CommandContext {
   senderId: string;

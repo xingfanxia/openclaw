@@ -1,6 +1,6 @@
-import type { SecretDetector } from "../secret-detector.js";
-import type { Redactor } from "../redactor.js";
 import type { AuditLog } from "../audit-log.js";
+import type { Redactor } from "../redactor.js";
+import type { SecretDetector } from "../secret-detector.js";
 
 interface BeforeToolCallEvent {
   toolName: string;
@@ -23,10 +23,7 @@ export function createToolFilter(
   redactor: Redactor,
   auditLog: AuditLog,
 ): (event: BeforeToolCallEvent, ctx: ToolCallContext) => ToolFilterResult | void {
-  return (
-    event: BeforeToolCallEvent,
-    ctx: ToolCallContext,
-  ): ToolFilterResult | void => {
+  return (event: BeforeToolCallEvent, ctx: ToolCallContext): ToolFilterResult | void => {
     if (!MONITORED_TOOLS.has(event.toolName)) {
       return;
     }

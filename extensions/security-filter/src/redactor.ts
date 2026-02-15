@@ -52,21 +52,14 @@ export class Redactor {
     }
   }
 
-  private redactContent(
-    content: string,
-    detections: DetectionResult[],
-  ): string {
-    const sortedDetections = [...detections].sort(
-      (a, b) => b.startIndex - a.startIndex,
-    );
+  private redactContent(content: string, detections: DetectionResult[]): string {
+    const sortedDetections = [...detections].sort((a, b) => b.startIndex - a.startIndex);
 
     let result = content;
     for (const detection of sortedDetections) {
       const replacement = "[REDACTED:" + detection.patternName + "]";
       result =
-        result.slice(0, detection.startIndex) +
-        replacement +
-        result.slice(detection.endIndex);
+        result.slice(0, detection.startIndex) + replacement + result.slice(detection.endIndex);
     }
 
     return result;

@@ -68,9 +68,7 @@ export class AuditLog {
     }
 
     const hint = patterns.length > 0 ? patterns[0] : "secret";
-    const prefix = content.slice(0, 10).replace(/[a-zA-Z0-9_-]{4,}/g, (m) =>
-      m.slice(0, 3) + "***"
-    );
+    const prefix = content.slice(0, 10).replace(/[a-zA-Z0-9_-]{4,}/g, (m) => m.slice(0, 3) + "***");
     return prefix + "... [" + hint + " detected]";
   }
 
