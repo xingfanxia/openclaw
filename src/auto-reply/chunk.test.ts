@@ -322,6 +322,13 @@ describe("chunkTextWithMode", () => {
     const chunks = chunkTextWithMode(text, 1000, "newline");
     expect(chunks).toEqual(["Para one", "Para two"]);
   });
+
+  it("splits on blank lines that contain invisible separators", () => {
+    // Some chat transports preserve "blank" lines by inserting ZWSP/NBSP.
+    const text = "Para one\n\u200b\nPara two";
+    const chunks = chunkTextWithMode(text, 1000, "newline");
+    expect(chunks).toEqual(["Para one", "Para two"]);
+  });
 });
 
 describe("chunkMarkdownTextWithMode", () => {

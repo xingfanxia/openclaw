@@ -203,10 +203,15 @@ export function chunkByParagraph(
   // Normalize to \n so blank line detection is consistent.
   const normalized = text.replace(/\r\n?/g, "\n");
 
+  // Some chat transports preserve "blank" lines by inserting invisible separators
+  // (e.g. ZWSP) or non-breaking spaces. Treat those as whitespace for paragraph breaks.
+  // We keep the original text intact; we only broaden the break detector.
+  const paragraphWhitespace = "\\t \\u00A0\\u200B\\u200C\\u200D\\u2060\\uFEFF";
+
   // Fast-path: if there are no blank-line paragraph separators, do not split.
   // (We *do not* early-return based on `limit` — newline mode is about paragraph
   // boundaries, not only exceeding a length limit.)
-  const paragraphRe = /\n[\t ]*\n+/;
+  const paragraphRe = new RegExp(`\\n[${paragraphWhitespace}]*\\n+`);
   if (!paragraphRe.test(normalized)) {
     if (normalized.length <= limit) {
       return [normalized];
@@ -220,7 +225,7 @@ export function chunkByParagraph(
   const spans = parseFenceSpans(normalized);
 
   const parts: string[] = [];
-  const re = /\n[\t ]*\n+/g; // paragraph break: blank line(s), allowing whitespace
+  const re = new RegExp(`\\n[${paragraphWhitespace}]*\\n+`, "g");
   let lastIndex = 0;
   for (const match of normalized.matchAll(re)) {
     const idx = match.index ?? 0;
