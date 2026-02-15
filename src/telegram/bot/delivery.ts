@@ -22,6 +22,7 @@ import {
 import { buildInlineKeyboard } from "../send.js";
 import { cacheSticker, getCachedSticker } from "../sticker-cache.js";
 import { resolveTelegramVoiceSend } from "../voice.js";
+import { sleep } from "../../utils.js";
 import {
   buildTelegramThreadParams,
   resolveTelegramReplyId,
@@ -30,6 +31,18 @@ import {
 
 const PARSE_ERR_RE = /can't parse entities|parse entities|find end of the entity/i;
 const VOICE_FORBIDDEN_RE = /VOICE_MESSAGES_FORBIDDEN/;
+
+function pickChunkDelayMs(params: { chunk: string; index: number; total: number }): number {
+  // Only add delay between chunks (never before the first or after the last).
+  if (params.total <= 1 || params.index <= 0 || params.index >= params.total) {
+    return 0;
+  }
+  const len = params.chunk.trim().length;
+  // Short chunks: quick cadence; long chunks: slightly longer "thinking" pause.
+  const min = len > 350 ? 450 : 220;
+  const max = len > 350 ? 1200 : 700;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
 export async function deliverReplies(params: {
   replies: ReplyPayload[];
@@ -127,6 +140,10 @@ export async function deliverReplies(params: {
         markDelivered();
         if (replyToId && !hasReplied) {
           hasReplied = true;
+        }
+        const delayMs = pickChunkDelayMs({ chunk: chunk.text, index: i, total: chunks.length });
+        if (delayMs > 0) {
+          await sleep(delayMs);
         }
       }
       continue;
