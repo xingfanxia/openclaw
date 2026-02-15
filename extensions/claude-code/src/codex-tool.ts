@@ -93,8 +93,19 @@ const CODEX_JOB_HISTORY_LIMIT = 200;
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_BACKGROUND_TIMEOUT_MS = 900_000;
 const DEFAULT_MAX_TIMEOUT_MS = 3_600_000;
+const DEFAULT_STALLED_AFTER_MS = 180_000;
 const CODEX_JOBS = new Map<string, CodexJob>();
 const CODEX_JOB_ABORT_STATES = new Map<string, CodexAbortState>();
+
+function getJobStallState(job: { status: string; updatedAt: number }, now: number) {
+  const stalledForMs = Math.max(0, now - job.updatedAt);
+  const isActive = job.status === "accepted" || job.status === "running";
+  return {
+    stalledForMs,
+    stalledAfterMs: DEFAULT_STALLED_AFTER_MS,
+    isLikelyStalled: isActive && stalledForMs > DEFAULT_STALLED_AFTER_MS,
+  };
+}
 
 function appendSessionLog(entry: Record<string, unknown>): void {
   try {
@@ -458,6 +469,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
           };
         }
         const now = Date.now();
+        const stall = getJobStallState(job, now);
         const payload = {
           id: job.id,
           status: job.status,
@@ -470,6 +482,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
           startedAt: job.startedAt,
           updatedAt: job.updatedAt,
           elapsedMs: Math.max(0, now - (job.startedAt ?? job.createdAt)),
+          ...stall,
           summary: job.summary,
           error: job.error,
         };
@@ -530,6 +543,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
           .slice(0, limit)
           .map((job) => {
             const now = Date.now();
+            const stall = getJobStallState(job, now);
             return {
               id: job.id,
               status: job.status,
@@ -542,6 +556,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
               startedAt: job.startedAt,
               updatedAt: job.updatedAt,
               elapsedMs: Math.max(0, now - (job.startedAt ?? job.createdAt)),
+              ...stall,
             };
           });
         const payload = { count: jobs.length, jobs };

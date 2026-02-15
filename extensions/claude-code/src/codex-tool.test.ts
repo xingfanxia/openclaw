@@ -36,6 +36,7 @@ describe("codex tool background jobs", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
+    vi.useRealTimers();
   });
 
   it("cancels a running background job", async () => {
@@ -86,5 +87,32 @@ describe("codex tool background jobs", () => {
       action: "cancel",
       jobId,
     });
+  });
+
+  it("marks jobs as likely stalled when updatedAt stops advancing", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-02-15T12:00:00.000Z"));
+
+    const tool = await createTool();
+    const accepted = (await tool.execute("t-6", {
+      action: "run",
+      background: true,
+      task: "simulate stall",
+      timeoutMs: 60_000,
+    })) as ToolResult;
+    const jobId = String(accepted.details.jobId ?? "");
+    expect(jobId).not.toBe("");
+
+    // Do not advance timers (no heartbeat ticks). Jump wall clock forward.
+    vi.setSystemTime(new Date("2026-02-15T12:10:00.000Z"));
+
+    const status = (await tool.execute("t-7", {
+      action: "status",
+      jobId,
+    })) as ToolResult;
+    expect(status.details.isLikelyStalled).toBe(true);
+    expect(Number(status.details.stalledForMs)).toBeGreaterThan(0);
+
+    await tool.execute("t-8", { action: "cancel", jobId });
   });
 });
