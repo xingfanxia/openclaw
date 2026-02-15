@@ -1,6 +1,10 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { OpenClawConfig } from "../../config/config.js";
-import { chunkText } from "../../auto-reply/chunk.js";
+import {
+  chunkMarkdownTextWithMode,
+  resolveChunkMode,
+  resolveTextChunkLimit,
+} from "../../auto-reply/chunk.js";
 import {
   resolveTelegramInlineButtonsScope,
   resolveTelegramTargetChatType,
@@ -193,9 +197,21 @@ export async function handleTelegramAction(
       asVoice: typeof params.asVoice === "boolean" ? params.asVoice : undefined,
       silent: typeof params.silent === "boolean" ? params.silent : undefined,
     };
-    // Chunk long messages to stay within Telegram's 4096 char limit.
-    // Skip chunking for media messages (captions have separate limits).
-    const chunks = mediaUrl ? [content] : chunkText(content, 4000);
+    // Chunking:
+    // - Respect per-channel config (`channels.telegram.chunkMode` + `textChunkLimit`) so agents can
+    //   intentionally send multi-bubble messages (e.g. paragraph-separated) for more natural chat.
+    // - Always cap at ~Telegram hard limit (4096) with a conservative 4000 to avoid rendering drift.
+    // - Skip chunking for media messages (captions have separate limits handled in `sendMessageTelegram`).
+    const hardLimit = 4000;
+    const limit = Math.min(
+      resolveTextChunkLimit(cfg, "telegram", accountId ?? undefined, { fallbackLimit: hardLimit }),
+      hardLimit,
+    );
+    const mode = resolveChunkMode(cfg, "telegram", accountId ?? undefined);
+    const chunks = mediaUrl ? [content] : chunkMarkdownTextWithMode(content, limit, mode);
+    if (!chunks.length && content) {
+      chunks.push(content);
+    }
     let result = { messageId: "", chatId: "" };
     for (let i = 0; i < chunks.length; i++) {
       const opts =
