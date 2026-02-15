@@ -176,7 +176,14 @@ export function extractMessagingToolSend(
     if (action !== "send" && action !== "thread-reply") {
       return undefined;
     }
-    const toRaw = typeof args.to === "string" ? args.to : undefined;
+    const firstTarget =
+      Array.isArray(args.targets) &&
+      args.targets.find((value) => typeof value === "string" && value.trim().length > 0);
+    const toRawCandidate =
+      (typeof args.to === "string" ? args.to : undefined) ??
+      (typeof args.target === "string" ? args.target : undefined) ??
+      (typeof firstTarget === "string" ? firstTarget : undefined);
+    const toRaw = typeof toRawCandidate === "string" ? toRawCandidate.trim() : "";
     if (!toRaw) {
       return undefined;
     }

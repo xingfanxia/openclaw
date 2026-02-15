@@ -35,4 +35,28 @@ describe("extractMessagingToolSend", () => {
     expect(result?.provider).toBe("slack");
     expect(result?.to).toBe("channel:C1");
   });
+
+  it("accepts target alias for message tool sends", () => {
+    const result = extractMessagingToolSend("message", {
+      action: "send",
+      channel: "telegram",
+      target: "123",
+    });
+
+    expect(result?.tool).toBe("message");
+    expect(result?.provider).toBe("telegram");
+    expect(result?.to).toBe("telegram:123");
+  });
+
+  it("falls back to first targets entry when target is omitted", () => {
+    const result = extractMessagingToolSend("message", {
+      action: "send",
+      channel: "telegram",
+      targets: ["123", "456"],
+    });
+
+    expect(result?.tool).toBe("message");
+    expect(result?.provider).toBe("telegram");
+    expect(result?.to).toBe("telegram:123");
+  });
 });

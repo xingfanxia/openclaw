@@ -195,6 +195,27 @@ describe("createFollowupRunner messaging tool dedupe", () => {
     expect(onBlockReply).not.toHaveBeenCalled();
   });
 
+  it("suppresses trailing ack-only payloads after message tool send", async () => {
+    const onBlockReply = vi.fn(async () => {});
+    runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "OK" }],
+      messagingToolSentTexts: ["already sent text"],
+      didSendViaMessagingTool: true,
+      meta: {},
+    });
+
+    const runner = createFollowupRunner({
+      opts: { onBlockReply },
+      typing: createMockTypingController(),
+      typingMode: "instant",
+      defaultModel: "anthropic/claude-opus-4-5",
+    });
+
+    await runner(baseQueuedRun("telegram"));
+
+    expect(onBlockReply).not.toHaveBeenCalled();
+  });
+
   it("persists usage even when replies are suppressed", async () => {
     const storePath = path.join(
       await fs.mkdtemp(path.join(tmpdir(), "openclaw-followup-usage-")),

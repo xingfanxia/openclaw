@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AnyAgentTool } from "../../src/agents/tools/common.js";
 import type { OpenClawPluginApi } from "../../src/plugins/types.js";
 
 type PluginCfg = {
@@ -28,8 +29,11 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
   ];
 
   const body = [
-    "Generate her with this body type: curvy hourglass figure with full bust, narrow waist,",
-    "wide hips, and thick thighs. Athletic but soft — she works out regularly.",
+    "CRITICAL BODY CONSISTENCY: keep the same signature body across every generation.",
+    "She is an adult woman (23) with a sexy fit-curvy hourglass build: full bust, small waist,",
+    "wide hips, round glutes, thick toned thighs, athletic but soft.",
+    "Do NOT randomize into slim/petite/flat-chested, bulky bodybuilder, or straight rectangular body.",
+    "Preserve believable proportions and keep shape consistent across outfits, poses, and camera angles.",
   ];
 
   const styleNotes =
@@ -59,9 +63,20 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
       ? "Style: photorealistic Chinese social media selfie, iPhone quality, subtle beauty filter, warm tones, influencer aesthetic. NOT studio photography, NOT AI art — specifically 小红书/抖音 Chinese internet aesthetic."
       : "Style: photorealistic candid home selfie, iPhone front camera, no filter, no makeup, raw and natural. NOT polished, NOT influencer — just a real girl at home being herself.";
 
-  return [...face, "", ...body, "", ...styleNotes, "", `Scene: ${scenePrompt}`, "", styleLine].join(
-    "\n",
-  );
+  return [
+    ...face,
+    "",
+    ...body,
+    "",
+    "IDENTITY LOCK: this is always the same woman from the reference face photos.",
+    "Do not drift identity, age, ethnicity, or core body proportions between generations.",
+    "",
+    ...styleNotes,
+    "",
+    `Scene: ${scenePrompt}`,
+    "",
+    styleLine,
+  ].join("\n");
 }
 
 /**
@@ -297,7 +312,7 @@ export default function register(api: OpenClawPluginApi) {
             ],
           };
         },
-      };
+      } as AnyAgentTool;
     },
     { optional: false },
   );

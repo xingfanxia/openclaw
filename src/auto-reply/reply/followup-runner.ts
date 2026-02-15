@@ -17,6 +17,7 @@ import { stripHeartbeatToken } from "../heartbeat.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
 import {
   applyReplyThreading,
+  filterMessagingToolAckPayloads,
   filterMessagingToolDuplicates,
   shouldSuppressMessagingToolReplies,
 } from "./reply-payloads.js";
@@ -250,13 +251,20 @@ export function createFollowupRunner(params: {
         payloads: replyTaggedPayloads,
         sentTexts: runResult.messagingToolSentTexts ?? [],
       });
+      const ackFilteredPayloads = filterMessagingToolAckPayloads({
+        payloads: dedupedPayloads,
+        didSendViaMessagingTool:
+          runResult.didSendViaMessagingTool === true ||
+          (runResult.messagingToolSentTexts?.length ?? 0) > 0 ||
+          (runResult.messagingToolSentTargets?.length ?? 0) > 0,
+      });
       const suppressMessagingToolReplies = shouldSuppressMessagingToolReplies({
         messageProvider: queued.run.messageProvider,
         messagingToolSentTargets: runResult.messagingToolSentTargets,
         originatingTo: queued.originatingTo,
         accountId: queued.run.agentAccountId,
       });
-      const finalPayloads = suppressMessagingToolReplies ? [] : dedupedPayloads;
+      const finalPayloads = suppressMessagingToolReplies ? [] : ackFilteredPayloads;
 
       if (finalPayloads.length === 0) {
         return;

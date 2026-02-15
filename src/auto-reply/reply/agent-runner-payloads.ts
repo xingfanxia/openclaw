@@ -9,6 +9,7 @@ import { createBlockReplyPayloadKey, type BlockReplyPipeline } from "./block-rep
 import { parseReplyDirectives } from "./reply-directives.js";
 import {
   applyReplyThreading,
+  filterMessagingToolAckPayloads,
   filterMessagingToolDuplicates,
   isRenderablePayload,
   shouldSuppressMessagingToolReplies,
@@ -30,6 +31,7 @@ export function buildReplyPayloads(params: {
   messagingToolSentTargets?: Parameters<
     typeof shouldSuppressMessagingToolReplies
   >[0]["messagingToolSentTargets"];
+  didSendViaMessagingTool?: boolean;
   originatingTo?: string;
   accountId?: string;
 }): { replyPayloads: ReplyPayload[]; didLogHeartbeatStrip: boolean } {
@@ -112,7 +114,14 @@ export function buildReplyPayloads(params: {
             (payload) => !params.directlySentBlockKeys!.has(createBlockReplyPayloadKey(payload)),
           )
         : dedupedPayloads;
-  const replyPayloads = suppressMessagingToolReplies ? [] : filteredPayloads;
+  const ackFilteredPayloads = filterMessagingToolAckPayloads({
+    payloads: filteredPayloads,
+    didSendViaMessagingTool:
+      params.didSendViaMessagingTool === true ||
+      messagingToolSentTexts.length > 0 ||
+      messagingToolSentTargets.length > 0,
+  });
+  const replyPayloads = suppressMessagingToolReplies ? [] : ackFilteredPayloads;
 
   return {
     replyPayloads,

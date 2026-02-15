@@ -151,6 +151,32 @@ describe("runReplyAgent messaging tool suppression", () => {
     expect(result).toMatchObject({ text: "hello world!" });
   });
 
+  it("suppresses trailing ack-only payloads after message tool send", async () => {
+    runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "OK" }],
+      messagingToolSentTexts: ["already sent text"],
+      didSendViaMessagingTool: true,
+      meta: {},
+    });
+
+    const result = await createRun("telegram");
+
+    expect(result).toBeUndefined();
+  });
+
+  it("keeps non-ack payloads when only ack suppression would apply", async () => {
+    runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "补充一下：记得看附件里的截图。" }],
+      messagingToolSentTexts: ["already sent text"],
+      didSendViaMessagingTool: true,
+      meta: {},
+    });
+
+    const result = await createRun("telegram");
+
+    expect(result).toMatchObject({ text: "补充一下：记得看附件里的截图。" });
+  });
+
   it("persists usage even when replies are suppressed", async () => {
     const storePath = path.join(
       await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-session-store-")),

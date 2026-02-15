@@ -79,6 +79,66 @@ export function filterMessagingToolDuplicates(params: {
   return payloads.filter((payload) => !isMessagingToolDuplicate(payload.text ?? "", sentTexts));
 }
 
+const MESSAGING_TOOL_ACK_TEXTS = new Set([
+  "ok",
+  "okay",
+  "kk",
+  "k",
+  "got it",
+  "roger",
+  "done",
+  "sent",
+  "message sent",
+  "收到",
+  "已收到",
+  "好的",
+  "好",
+  "行",
+  "明白",
+  "知道了",
+]);
+
+function normalizeAckText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^[\s"'`([{<]+/, "")
+    .replace(/[\s"'`)\]}>.!?,;:~。！？、…]+$/g, "");
+}
+
+function isMessagingToolAckOnlyPayload(payload: ReplyPayload): boolean {
+  if (
+    payload.mediaUrl ||
+    (payload.mediaUrls && payload.mediaUrls.length > 0) ||
+    payload.channelData
+  ) {
+    return false;
+  }
+  if (payload.audioAsVoice) {
+    return false;
+  }
+  const text = payload.text?.trim();
+  if (!text) {
+    return false;
+  }
+  const normalized = normalizeAckText(text);
+  if (!normalized) {
+    return false;
+  }
+  return MESSAGING_TOOL_ACK_TEXTS.has(normalized);
+}
+
+export function filterMessagingToolAckPayloads(params: {
+  payloads: ReplyPayload[];
+  didSendViaMessagingTool: boolean;
+}): ReplyPayload[] {
+  const { payloads, didSendViaMessagingTool } = params;
+  if (!didSendViaMessagingTool || payloads.length === 0) {
+    return payloads;
+  }
+  return payloads.filter((payload) => !isMessagingToolAckOnlyPayload(payload));
+}
+
 function normalizeAccountId(value?: string): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed.toLowerCase() : undefined;
