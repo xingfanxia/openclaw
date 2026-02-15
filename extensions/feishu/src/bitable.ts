@@ -224,6 +224,77 @@ async function createRecord(
   };
 }
 
+const BITABLE_FIELD_TYPE_IDS: Record<string, number> = {
+  text: 1,
+  number: 2,
+  single_select: 3,
+  multi_select: 4,
+  datetime: 5,
+  checkbox: 7,
+  user: 11,
+  url: 15,
+  attachment: 17,
+};
+
+function resolveBitableFieldTypeId(fieldType: string): number {
+  const normalized = fieldType.trim().toLowerCase();
+  const aliased =
+    normalized === "single" || normalized === "singleselect"
+      ? "single_select"
+      : normalized === "multi" || normalized === "multiselect"
+        ? "multi_select"
+        : normalized === "date" || normalized === "time" || normalized === "date_time"
+          ? "datetime"
+          : normalized;
+  const id = BITABLE_FIELD_TYPE_IDS[aliased];
+  if (!id) {
+    throw new Error(
+      `Unsupported field_type "${fieldType}". Supported: ${Object.keys(BITABLE_FIELD_TYPE_IDS).join(", ")}`,
+    );
+  }
+  return id;
+}
+
+async function createField(
+  client: ReturnType<typeof createFeishuClient>,
+  appToken: string,
+  tableId: string,
+  params: {
+    field_name: string;
+    field_type: string;
+    options?: string[];
+    description?: string;
+  },
+) {
+  const type = resolveBitableFieldTypeId(params.field_type);
+  const property: Record<string, unknown> = {};
+  if ((type === 3 || type === 4) && params.options?.length) {
+    property.options = params.options
+      .map((name) => (typeof name === "string" ? name.trim() : ""))
+      .filter(Boolean)
+      .map((name) => ({ name }));
+  }
+
+  const res = await client.bitable.appTableField.create({
+    path: { app_token: appToken, table_id: tableId },
+    data: {
+      field_name: params.field_name,
+      type,
+      ...(Object.keys(property).length ? { property } : {}),
+      ...(params.description?.trim()
+        ? { description: { text: params.description.trim(), disable_sync: false } }
+        : {}),
+    },
+  });
+  if (res.code !== 0) {
+    throw new Error(res.msg);
+  }
+
+  return {
+    field: res.data?.field,
+  };
+}
+
 async function updateRecord(
   client: ReturnType<typeof createFeishuClient>,
   appToken: string,
@@ -307,6 +378,29 @@ const UpdateRecordSchema = Type.Object({
   }),
 });
 
+const CreateFieldSchema = Type.Object({
+  app_token: Type.String({
+    description: "Bitable app token (use feishu_bitable_get_meta to get from URL)",
+  }),
+  table_id: Type.String({ description: "Table ID (from URL: ?table=YYY)" }),
+  field_name: Type.String({ description: "Field (column) name" }),
+  field_type: Type.String({
+    description:
+      'Field type. Supported: "text", "number", "single_select", "multi_select", "datetime", "checkbox", "user", "url", "attachment".',
+  }),
+  options: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Options for select fields (single_select / multi_select).",
+    }),
+  ),
+  description: Type.Optional(
+    Type.String({
+      description:
+        "Optional field description (helper text) shown under the column name in Bitable.",
+    }),
+  ),
+});
+
 // ============ Tool Registration ============
 
 export function registerFeishuBitableTools(api: OpenClawPluginApi) {
@@ -359,7 +453,39 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_list_fields" },
   );
 
-  // Tool 2: feishu_bitable_list_records
+  // Tool 2: feishu_bitable_create_field
+  api.registerTool(
+    {
+      name: "feishu_bitable_create_field",
+      label: "Feishu Bitable Create Field",
+      description: "Create a new field (column) in a Bitable table",
+      parameters: CreateFieldSchema,
+      async execute(_toolCallId, params) {
+        const { app_token, table_id, field_name, field_type, options, description } = params as {
+          app_token: string;
+          table_id: string;
+          field_name: string;
+          field_type: string;
+          options?: string[];
+          description?: string;
+        };
+        try {
+          const result = await createField(getClient(), app_token, table_id, {
+            field_name,
+            field_type,
+            options,
+            description,
+          });
+          return json(result);
+        } catch (err) {
+          return json({ error: err instanceof Error ? err.message : String(err) });
+        }
+      },
+    },
+    { name: "feishu_bitable_create_field" },
+  );
+
+  // Tool 3: feishu_bitable_list_records
   api.registerTool(
     {
       name: "feishu_bitable_list_records",
@@ -384,7 +510,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_list_records" },
   );
 
-  // Tool 3: feishu_bitable_get_record
+  // Tool 4: feishu_bitable_get_record
   api.registerTool(
     {
       name: "feishu_bitable_get_record",
@@ -408,7 +534,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_get_record" },
   );
 
-  // Tool 4: feishu_bitable_create_record
+  // Tool 5: feishu_bitable_create_record
   api.registerTool(
     {
       name: "feishu_bitable_create_record",
@@ -432,7 +558,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_create_record" },
   );
 
-  // Tool 5: feishu_bitable_update_record
+  // Tool 6: feishu_bitable_update_record
   api.registerTool(
     {
       name: "feishu_bitable_update_record",
@@ -457,5 +583,5 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_update_record" },
   );
 
-  api.logger.info?.(`feishu_bitable: Registered 6 bitable tools`);
+  api.logger.info?.(`feishu_bitable: Registered 7 bitable tools`);
 }
