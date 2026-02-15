@@ -329,6 +329,16 @@ describe("chunkTextWithMode", () => {
     const chunks = chunkTextWithMode(text, 1000, "newline");
     expect(chunks).toEqual(["Para one", "Para two"]);
   });
+
+  it("packs many paragraphs into fewer chunks for newline mode", () => {
+    const paras = Array.from({ length: 10 }, (_, i) => `P${i} ${"x".repeat(90)}`);
+    const text = paras.join("\n\n");
+    const chunks = chunkTextWithMode(text, 600, "newline");
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.length).toBeLessThan(paras.length);
+    expect(chunks.every((chunk) => chunk.length <= 600)).toBe(true);
+    expect(chunks.some((chunk) => chunk.includes("\n\n"))).toBe(true);
+  });
 });
 
 describe("chunkMarkdownTextWithMode", () => {

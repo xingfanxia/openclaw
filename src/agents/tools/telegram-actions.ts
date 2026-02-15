@@ -5,6 +5,7 @@ import {
   resolveChunkMode,
   resolveTextChunkLimit,
 } from "../../auto-reply/chunk.js";
+import { TELEGRAM_MAX_CAPTION_LENGTH } from "../../telegram/caption.js";
 import {
   resolveTelegramInlineButtonsScope,
   resolveTelegramTargetChatType,
@@ -19,6 +20,7 @@ import {
 } from "../../telegram/send.js";
 import { getCacheStats, searchStickers } from "../../telegram/sticker-cache.js";
 import { resolveTelegramToken } from "../../telegram/token.js";
+import { sleep } from "../../utils.js";
 import {
   createActionGate,
   jsonResult,
@@ -32,6 +34,30 @@ type TelegramButton = {
   text: string;
   callback_data: string;
 };
+
+function pickChunkDelayMs(params: { chunk: string; index: number; total: number }): number {
+  // Never sleep in tests (keeps unit tests fast + deterministic).
+  // Vitest sets VITEST=1; some harnesses set NODE_ENV=test.
+  const isTestEnv =
+    typeof process !== "undefined" &&
+    (process.env.VITEST !== undefined || process.env.NODE_ENV === "test");
+  if (isTestEnv) {
+    return 0;
+  }
+
+  // Only add delay between chunks (never before the first or after the last).
+  if (params.total <= 1 || params.index <= 0 || params.index >= params.total) {
+    return 0;
+  }
+  const len = params.chunk.trim().length;
+  const { min, max } =
+    len > 350
+      ? { min: 1600, max: 3800 }
+      : len > 120
+        ? { min: 1200, max: 3200 }
+        : { min: 900, max: 2600 };
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
 export function readTelegramButtons(
   params: Record<string, unknown>,
@@ -201,30 +227,101 @@ export async function handleTelegramAction(
     // - Respect per-channel config (`channels.telegram.chunkMode` + `textChunkLimit`) so agents can
     //   intentionally send multi-bubble messages (e.g. paragraph-separated) for more natural chat.
     // - Always cap at ~Telegram hard limit (4096) with a conservative 4000 to avoid rendering drift.
-    // - Skip chunking for media messages (captions have separate limits handled in `sendMessageTelegram`).
+    // - For media messages, we still chunk text. The first chunk may be sent as a caption, and the rest
+    //   as follow-up text-only bubbles. If the first chunk is too long for a caption, we send media
+    //   without a caption, then send all chunks as text bubbles (prevents Telegram auto-splitting).
     const hardLimit = 4000;
     const limit = Math.min(
       resolveTextChunkLimit(cfg, "telegram", accountId ?? undefined, { fallbackLimit: hardLimit }),
       hardLimit,
     );
     const mode = resolveChunkMode(cfg, "telegram", accountId ?? undefined);
-    const chunks = mediaUrl ? [content] : chunkMarkdownTextWithMode(content, limit, mode);
-    if (!chunks.length && content) {
-      chunks.push(content);
-    }
-    let result = { messageId: "", chatId: "" };
-    for (let i = 0; i < chunks.length; i++) {
-      const opts =
-        i === 0
-          ? sendOpts
-          : {
+    const chunks = content ? chunkMarkdownTextWithMode(content, limit, mode) : [];
+    const planned: Array<{ text: string; opts: typeof sendOpts }> = [];
+    const trimmedFirstChunk = chunks[0]?.trim() ?? "";
+
+    if (mediaUrl) {
+      if (!chunks.length) {
+        // Media-only message.
+        planned.push({ text: "", opts: sendOpts });
+      } else if (trimmedFirstChunk && trimmedFirstChunk.length <= TELEGRAM_MAX_CAPTION_LENGTH) {
+        planned.push({ text: chunks[0] ?? "", opts: sendOpts });
+        for (let i = 1; i < chunks.length; i += 1) {
+          planned.push({
+            text: chunks[i] ?? "",
+            opts: {
               ...sendOpts,
               mediaUrl: undefined,
               buttons: undefined,
               replyToMessageId: undefined,
               quoteText: undefined,
-            };
-      result = await sendMessageTelegram(to, chunks[i], opts);
+            },
+          });
+        }
+      } else {
+        // First chunk would exceed Telegram caption limits. Send media without caption, then
+        // send all chunks as text-only messages so we control pacing/delays.
+        planned.push({
+          text: "",
+          opts: {
+            ...sendOpts,
+            buttons: undefined,
+          },
+        });
+        for (let i = 0; i < chunks.length; i += 1) {
+          planned.push({
+            text: chunks[i] ?? "",
+            opts:
+              i === 0
+                ? {
+                    ...sendOpts,
+                    mediaUrl: undefined,
+                    replyToMessageId: undefined,
+                    quoteText: undefined,
+                  }
+                : {
+                    ...sendOpts,
+                    mediaUrl: undefined,
+                    buttons: undefined,
+                    replyToMessageId: undefined,
+                    quoteText: undefined,
+                  },
+          });
+        }
+      }
+    } else {
+      if (!chunks.length && content) {
+        planned.push({ text: content, opts: sendOpts });
+      } else {
+        for (let i = 0; i < chunks.length; i += 1) {
+          planned.push({
+            text: chunks[i] ?? "",
+            opts:
+              i === 0
+                ? sendOpts
+                : {
+                    ...sendOpts,
+                    buttons: undefined,
+                    replyToMessageId: undefined,
+                    quoteText: undefined,
+                  },
+          });
+        }
+      }
+    }
+
+    let result = { messageId: "", chatId: "" };
+    for (let i = 0; i < planned.length; i += 1) {
+      const item = planned[i];
+      result = await sendMessageTelegram(to, item.text, item.opts);
+      const delayMs = pickChunkDelayMs({
+        chunk: item.text,
+        index: i,
+        total: planned.length,
+      });
+      if (delayMs > 0) {
+        await sleep(delayMs);
+      }
     }
     return jsonResult({
       ok: true,

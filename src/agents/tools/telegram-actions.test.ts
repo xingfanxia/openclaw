@@ -13,6 +13,7 @@ const sendStickerTelegram = vi.fn(async () => ({
 }));
 const deleteMessageTelegram = vi.fn(async () => ({ ok: true }));
 const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+const originalNodeEnv = process.env.NODE_ENV;
 
 vi.mock("../../telegram/send.js", () => ({
   reactMessageTelegram: (...args: unknown[]) => reactMessageTelegram(...args),
@@ -28,6 +29,7 @@ describe("handleTelegramAction", () => {
     sendStickerTelegram.mockClear();
     deleteMessageTelegram.mockClear();
     process.env.TELEGRAM_BOT_TOKEN = "tok";
+    process.env.NODE_ENV = "test";
   });
 
   afterEach(() => {
@@ -35,6 +37,11 @@ describe("handleTelegramAction", () => {
       delete process.env.TELEGRAM_BOT_TOKEN;
     } else {
       process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    }
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
     }
   });
 
@@ -323,6 +330,42 @@ describe("handleTelegramAction", () => {
       "123456",
       "第三段",
       expect.objectContaining({ token: "tok", replyToMessageId: undefined, quoteText: undefined }),
+    );
+  });
+
+  it("splits sendMessage with media into multiple bubbles when chunkMode is newline", async () => {
+    const cfg = {
+      channels: { telegram: { botToken: "tok", chunkMode: "newline", textChunkLimit: 1400 } },
+    } as OpenClawConfig;
+
+    await handleTelegramAction(
+      {
+        action: "sendMessage",
+        to: "123456",
+        content: "第一段\n\n第二段\n\n第三段",
+        mediaUrl: "https://example.com/image.jpg",
+      },
+      cfg,
+    );
+
+    expect(sendMessageTelegram).toHaveBeenCalledTimes(3);
+    expect(sendMessageTelegram).toHaveBeenNthCalledWith(
+      1,
+      "123456",
+      "第一段",
+      expect.objectContaining({ token: "tok", mediaUrl: "https://example.com/image.jpg" }),
+    );
+    expect(sendMessageTelegram).toHaveBeenNthCalledWith(
+      2,
+      "123456",
+      "第二段",
+      expect.objectContaining({ token: "tok", mediaUrl: undefined }),
+    );
+    expect(sendMessageTelegram).toHaveBeenNthCalledWith(
+      3,
+      "123456",
+      "第三段",
+      expect.objectContaining({ token: "tok", mediaUrl: undefined }),
     );
   });
 

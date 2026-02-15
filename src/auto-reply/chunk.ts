@@ -240,22 +240,69 @@ export function chunkByParagraph(
   }
   parts.push(normalized.slice(lastIndex));
 
-  const chunks: string[] = [];
+  const paragraphs: string[] = [];
   for (const part of parts) {
     const paragraph = part.replace(/\s+$/g, "");
     if (!paragraph.trim()) {
       continue;
     }
-    if (paragraph.length <= limit) {
-      chunks.push(paragraph);
-    } else if (!splitLongParagraphs) {
-      chunks.push(paragraph);
-    } else {
-      chunks.push(...chunkText(paragraph, limit));
-    }
+    paragraphs.push(paragraph);
   }
 
-  return chunks;
+  // Heuristic:
+  // - For "chatty" short messages, keep paragraph-per-bubble so newline mode feels intentional.
+  // - For long digests/articles with many paragraphs, pack multiple paragraphs into each chunk
+  //   up to `limit` so we don't spam the channel with dozens of bubbles.
+  const preferSeparateParagraphs =
+    paragraphs.length <= 4 && normalized.length <= Math.min(limit, 1600);
+  if (preferSeparateParagraphs) {
+    const chunks: string[] = [];
+    for (const paragraph of paragraphs) {
+      if (paragraph.length <= limit) {
+        chunks.push(paragraph);
+      } else if (!splitLongParagraphs) {
+        chunks.push(paragraph);
+      } else {
+        chunks.push(...chunkText(paragraph, limit));
+      }
+    }
+    return chunks;
+  }
+
+  const packed: string[] = [];
+  let buf = "";
+  for (const paragraph of paragraphs) {
+    // If a single paragraph is too large, flush any buffered content and then emit
+    // the paragraph (or its length-split chunks) as standalone chunks.
+    if (paragraph.length > limit) {
+      if (buf.trim()) {
+        packed.push(buf);
+        buf = "";
+      }
+      if (!splitLongParagraphs) {
+        packed.push(paragraph);
+      } else {
+        packed.push(...chunkText(paragraph, limit));
+      }
+      continue;
+    }
+
+    const sep = buf ? "\n\n" : "";
+    if (!buf || buf.length + sep.length + paragraph.length <= limit) {
+      buf += sep + paragraph;
+      continue;
+    }
+
+    if (buf.trim()) {
+      packed.push(buf);
+    }
+    buf = paragraph;
+  }
+  if (buf.trim()) {
+    packed.push(buf);
+  }
+
+  return packed;
 }
 
 /**

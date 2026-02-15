@@ -33,14 +33,28 @@ const PARSE_ERR_RE = /can't parse entities|parse entities|find end of the entity
 const VOICE_FORBIDDEN_RE = /VOICE_MESSAGES_FORBIDDEN/;
 
 function pickChunkDelayMs(params: { chunk: string; index: number; total: number }): number {
+  // Never sleep in tests (keeps unit tests fast + deterministic).
+  // Vitest sets VITEST=1; some harnesses set NODE_ENV=test.
+  const isTestEnv =
+    typeof process !== "undefined" &&
+    (process.env.VITEST !== undefined || process.env.NODE_ENV === "test");
+  if (isTestEnv) {
+    return 0;
+  }
+
   // Only add delay between chunks (never before the first or after the last).
   if (params.total <= 1 || params.index <= 0 || params.index >= params.total) {
     return 0;
   }
   const len = params.chunk.trim().length;
-  // Short chunks: quick cadence; long chunks: slightly longer "thinking" pause.
-  const min = len > 350 ? 450 : 220;
-  const max = len > 350 ? 1200 : 700;
+  // Deliberately slower than typical "typing speed" to avoid bots blasting multiple
+  // bubbles instantly. This is a cadence/pacing delay between bubbles.
+  const { min, max } =
+    len > 350
+      ? { min: 1600, max: 3800 }
+      : len > 120
+        ? { min: 1200, max: 3200 }
+        : { min: 900, max: 2600 };
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
@@ -297,6 +311,10 @@ export async function deliverReplies(params: {
           markDelivered();
           if (replyToId && !hasReplied) {
             hasReplied = true;
+          }
+          const delayMs = pickChunkDelayMs({ chunk: chunk.text, index: i, total: chunks.length });
+          if (delayMs > 0) {
+            await sleep(delayMs);
           }
         }
         pendingFollowUpText = undefined;
