@@ -295,6 +295,79 @@ async function createField(
   };
 }
 
+async function getFieldById(
+  client: ReturnType<typeof createFeishuClient>,
+  appToken: string,
+  tableId: string,
+  fieldId: string,
+) {
+  const { fields } = await listFields(client, appToken, tableId);
+  const match = fields.find((f) => f.field_id === fieldId);
+  if (!match) {
+    throw new Error(
+      `Field not found: field_id="${fieldId}". Use feishu_bitable_list_fields to inspect fields.`,
+    );
+  }
+  return match;
+}
+
+async function updateField(
+  client: ReturnType<typeof createFeishuClient>,
+  appToken: string,
+  tableId: string,
+  fieldId: string,
+  params: {
+    field_name?: string;
+    field_type?: string;
+    options?: string[];
+    description?: string;
+  },
+) {
+  const existing = await getFieldById(client, appToken, tableId, fieldId);
+
+  const fieldName = params.field_name?.trim() || existing.field_name || "";
+  if (!fieldName) {
+    throw new Error("field_name is required (or the existing field must have a name).");
+  }
+
+  const type =
+    typeof params.field_type === "string" && params.field_type.trim()
+      ? resolveBitableFieldTypeId(params.field_type)
+      : typeof existing.type === "number"
+        ? existing.type
+        : undefined;
+  if (type === undefined) {
+    throw new Error("field_type is required (or the existing field must have a valid type).");
+  }
+
+  const property: Record<string, unknown> = {};
+  if ((type === 3 || type === 4) && params.options?.length) {
+    property.options = params.options
+      .map((name) => (typeof name === "string" ? name.trim() : ""))
+      .filter(Boolean)
+      .map((name) => ({ name }));
+  }
+
+  const res = await client.bitable.appTableField.update({
+    path: { app_token: appToken, table_id: tableId, field_id: fieldId },
+    data: {
+      field_name: fieldName,
+      type,
+      ...(Object.keys(property).length ? { property } : {}),
+      ...(params.description?.trim()
+        ? { description: { text: params.description.trim(), disable_sync: false } }
+        : {}),
+    },
+  });
+  if (res.code !== 0) {
+    throw new Error(res.msg);
+  }
+
+  return {
+    field: res.data?.field,
+  };
+}
+
 async function updateRecord(
   client: ReturnType<typeof createFeishuClient>,
   appToken: string,
@@ -401,6 +474,33 @@ const CreateFieldSchema = Type.Object({
   ),
 });
 
+const UpdateFieldSchema = Type.Object({
+  app_token: Type.String({
+    description: "Bitable app token (use feishu_bitable_get_meta to get from URL)",
+  }),
+  table_id: Type.String({ description: "Table ID (from URL: ?table=YYY)" }),
+  field_id: Type.String({ description: "Field ID to update (use feishu_bitable_list_fields)" }),
+  field_name: Type.Optional(Type.String({ description: "New field name (optional)" })),
+  field_type: Type.Optional(
+    Type.String({
+      description:
+        'New field type (optional). Supported: "text", "number", "single_select", "multi_select", "datetime", "checkbox", "user", "url", "attachment".',
+    }),
+  ),
+  options: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Options for select fields (single_select / multi_select). Only applied if provided.",
+    }),
+  ),
+  description: Type.Optional(
+    Type.String({
+      description:
+        "Optional field description (helper text) shown under the column name in Bitable.",
+    }),
+  ),
+});
+
 // ============ Tool Registration ============
 
 export function registerFeishuBitableTools(api: OpenClawPluginApi) {
@@ -485,7 +585,41 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_create_field" },
   );
 
-  // Tool 3: feishu_bitable_list_records
+  // Tool 3: feishu_bitable_update_field
+  api.registerTool(
+    {
+      name: "feishu_bitable_update_field",
+      label: "Feishu Bitable Update Field",
+      description: "Update a field (column) in a Bitable table",
+      parameters: UpdateFieldSchema,
+      async execute(_toolCallId, params) {
+        const { app_token, table_id, field_id, field_name, field_type, options, description } =
+          params as {
+            app_token: string;
+            table_id: string;
+            field_id: string;
+            field_name?: string;
+            field_type?: string;
+            options?: string[];
+            description?: string;
+          };
+        try {
+          const result = await updateField(getClient(), app_token, table_id, field_id, {
+            field_name,
+            field_type,
+            options,
+            description,
+          });
+          return json(result);
+        } catch (err) {
+          return json({ error: err instanceof Error ? err.message : String(err) });
+        }
+      },
+    },
+    { name: "feishu_bitable_update_field" },
+  );
+
+  // Tool 4: feishu_bitable_list_records
   api.registerTool(
     {
       name: "feishu_bitable_list_records",
@@ -510,7 +644,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_list_records" },
   );
 
-  // Tool 4: feishu_bitable_get_record
+  // Tool 5: feishu_bitable_get_record
   api.registerTool(
     {
       name: "feishu_bitable_get_record",
@@ -534,7 +668,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_get_record" },
   );
 
-  // Tool 5: feishu_bitable_create_record
+  // Tool 6: feishu_bitable_create_record
   api.registerTool(
     {
       name: "feishu_bitable_create_record",
@@ -558,7 +692,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_create_record" },
   );
 
-  // Tool 6: feishu_bitable_update_record
+  // Tool 7: feishu_bitable_update_record
   api.registerTool(
     {
       name: "feishu_bitable_update_record",
@@ -583,5 +717,5 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_update_record" },
   );
 
-  api.logger.info?.(`feishu_bitable: Registered 7 bitable tools`);
+  api.logger.info?.(`feishu_bitable: Registered 8 bitable tools`);
 }
