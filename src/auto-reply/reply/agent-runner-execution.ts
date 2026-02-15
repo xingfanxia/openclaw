@@ -128,6 +128,10 @@ export async function runAgentTurnWithFallback(params: {
           return { skip: true };
         }
         if (!text) {
+          // Allow media-only payloads (e.g. tool result screenshots) through.
+          if ((payload.mediaUrls?.length ?? 0) > 0) {
+            return { text: undefined, skip: false };
+          }
           return { skip: true };
         }
         const sanitized = sanitizeUserFacingText(text, {
@@ -376,7 +380,9 @@ export async function runAgentTurnWithFallback(params: {
                       text,
                       mediaUrls: payload.mediaUrls,
                       mediaUrl: payload.mediaUrls?.[0],
-                      replyToId: payload.replyToId,
+                      replyToId:
+                        payload.replyToId ??
+                        (payload.replyToCurrent === false ? undefined : currentMessageId),
                       replyToTag: payload.replyToTag,
                       replyToCurrent: payload.replyToCurrent,
                     },

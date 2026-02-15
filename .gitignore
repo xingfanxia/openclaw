@@ -73,6 +73,8 @@ docs/.local/
 IDENTITY.md
 USER.md
 .tgz
+.idea
+handoffs/HANDOFF.md
 
 # local tooling
 .serena/
@@ -81,7 +83,5 @@ USER.md
 /memory/
 .agent/*.json
 !.agent/workflows/
-local/
-
-# Session handoff artifacts
-handoffs/HANDOFF.md
+/local/
+package-lock.json
