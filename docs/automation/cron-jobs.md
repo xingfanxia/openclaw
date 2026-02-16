@@ -66,10 +66,12 @@ For the canonical JSON shapes and examples, see [JSON schema for tool calls](/au
 
 ## Where cron jobs are stored
 
-Cron jobs are persisted on the Gateway host at `~/.openclaw/cron/jobs.json` by default.
-The Gateway loads the file into memory and writes it back on changes, so manual edits
-are only safe when the Gateway is stopped. Prefer `openclaw cron add/edit` or the cron
-tool call API for changes.
+Cron job definitions are persisted on the Gateway host at `~/.openclaw/cron/jobs.json`
+by default. Runtime execution state is stored separately at
+`~/.openclaw/cron/runs/.jobs-state.json`.
+The Gateway loads these files into memory and writes them back on changes, so manual
+edits are only safe when the Gateway is stopped. Prefer `openclaw cron add/edit` or the
+cron tool call API for changes.
 
 ## Beginner-friendly overview
 
@@ -321,7 +323,8 @@ Notes:
 
 ## Storage & history
 
-- Job store: `~/.openclaw/cron/jobs.json` (Gateway-managed JSON).
+- Job definitions: `~/.openclaw/cron/jobs.json` (Gateway-managed JSON).
+- Runtime job state: `~/.openclaw/cron/runs/.jobs-state.json` (Gateway-managed JSON).
 - Run history: `~/.openclaw/cron/runs/<jobId>.jsonl` (JSONL, auto-pruned).
 - Override store path: `cron.store` in config.
 

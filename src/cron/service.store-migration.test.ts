@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CronService } from "./service.js";
+import { resolveCronRuntimeStatePath } from "./store.js";
 
 const noopLogger = {
   debug: vi.fn(),
@@ -109,7 +110,7 @@ describe("CronService store migrations", () => {
     };
     const persistedJob = persisted.jobs.find((entry) => entry.id === "legacy-agentturn-job");
     expect(persistedJob).toBeDefined();
-    expect(persistedJob?.state).toEqual(expect.any(Object));
+    expect(persistedJob?.state).toBeUndefined();
     expect(persistedJob?.model).toBeUndefined();
     expect(persistedJob?.thinking).toBeUndefined();
     expect(persistedJob?.timeoutSeconds).toBeUndefined();
@@ -117,6 +118,12 @@ describe("CronService store migrations", () => {
     expect(persistedJob?.channel).toBeUndefined();
     expect(persistedJob?.to).toBeUndefined();
     expect(persistedJob?.bestEffortDeliver).toBeUndefined();
+
+    const runtime = JSON.parse(
+      await fs.readFile(resolveCronRuntimeStatePath(store.storePath), "utf-8"),
+    ) as { jobs: Array<Record<string, unknown>> };
+    const runtimeJob = runtime.jobs.find((entry) => entry.id === "legacy-agentturn-job");
+    expect(runtimeJob?.state).toEqual(expect.any(Object));
 
     cron.stop();
     await store.cleanup();

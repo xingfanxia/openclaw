@@ -60,7 +60,6 @@ function applyJobResult(
   job.state.lastStatus = result.status;
   job.state.lastDurationMs = Math.max(0, result.endedAt - result.startedAt);
   job.state.lastError = result.error;
-  job.updatedAtMs = result.endedAt;
 
   // Track consecutive errors for backoff / auto-disable.
   if (result.status === "error") {
