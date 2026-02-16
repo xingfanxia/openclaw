@@ -82,6 +82,25 @@ function buildSendSchema(options: { includeButtons: boolean; includeCards: boole
       Type.String({ description: "Quote text for Telegram reply_parameters" }),
     ),
     bestEffort: Type.Optional(Type.Boolean()),
+    mentionOpenIds: Type.Optional(
+      Type.Array(
+        Type.String({
+          description: 'Feishu open_id list to @mention (Feishu only). Example: ["ou_xxx"].',
+        }),
+      ),
+    ),
+    mentionNames: Type.Optional(
+      Type.Array(
+        Type.String({
+          description: 'Display names for mentionOpenIds by index (Feishu only). Example: ["AX"].',
+        }),
+      ),
+    ),
+    mentionAll: Type.Optional(
+      Type.Boolean({
+        description: "Also @all in Feishu group messages (Feishu only).",
+      }),
+    ),
     gifPlayback: Type.Optional(Type.Boolean()),
     buttons: Type.Optional(
       Type.Array(

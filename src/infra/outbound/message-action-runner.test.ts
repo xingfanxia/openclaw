@@ -771,6 +771,112 @@ describe("runMessageAction media caption behavior", () => {
   });
 });
 
+describe("runMessageAction Feishu mention injection", () => {
+  const createFeishuStubPlugin = (sendText: ReturnType<typeof vi.fn>) => ({
+    ...createOutboundTestPlugin({
+      id: "feishu",
+      outbound: {
+        deliveryMode: "direct" as const,
+        sendText,
+        sendMedia: vi.fn().mockResolvedValue({
+          channel: "feishu",
+          messageId: "m2",
+          chatId: "c1",
+        }),
+      },
+    }),
+    messaging: {
+      normalizeTarget: (raw: string) => raw,
+    },
+  });
+
+  afterEach(() => {
+    setActivePluginRegistry(createTestRegistry([]));
+    vi.clearAllMocks();
+  });
+
+  it("prepends Feishu @mentions when mentionOpenIds are provided", async () => {
+    const sendText = vi.fn().mockResolvedValue({
+      channel: "feishu",
+      messageId: "m1",
+      chatId: "c1",
+    });
+    setActivePluginRegistry(
+      createTestRegistry([
+        {
+          pluginId: "feishu",
+          source: "test",
+          plugin: createFeishuStubPlugin(sendText),
+        },
+      ]),
+    );
+    const cfg = {
+      channels: {
+        feishu: {
+          enabled: true,
+        },
+      },
+    } as OpenClawConfig;
+
+    await runMessageAction({
+      cfg,
+      action: "send",
+      params: {
+        channel: "feishu",
+        target: "user:ou_target",
+        message: "Please choose A or B",
+        mentionOpenIds: ["ou_50eb6551e53cb98b0e2a214f6b307bab"],
+        mentionNames: ["AX"],
+      },
+      dryRun: false,
+    });
+
+    expect(sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: '<at user_id="ou_50eb6551e53cb98b0e2a214f6b307bab">AX</at> Please choose A or B',
+      }),
+    );
+  });
+
+  it("rejects invalid Feishu mentionOpenIds", async () => {
+    const sendText = vi.fn().mockResolvedValue({
+      channel: "feishu",
+      messageId: "m1",
+      chatId: "c1",
+    });
+    setActivePluginRegistry(
+      createTestRegistry([
+        {
+          pluginId: "feishu",
+          source: "test",
+          plugin: createFeishuStubPlugin(sendText),
+        },
+      ]),
+    );
+    const cfg = {
+      channels: {
+        feishu: {
+          enabled: true,
+        },
+      },
+    } as OpenClawConfig;
+
+    await expect(
+      runMessageAction({
+        cfg,
+        action: "send",
+        params: {
+          channel: "feishu",
+          target: "user:ou_target",
+          message: "Need approval",
+          mentionOpenIds: ['ou_bad"id'],
+        },
+        dryRun: true,
+      }),
+    ).rejects.toThrow(/Invalid Feishu mentionOpenId/i);
+  });
+});
+
 describe("runMessageAction card-only send behavior", () => {
   const handleAction = vi.fn(async ({ params }: { params: Record<string, unknown> }) =>
     jsonResult({

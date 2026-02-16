@@ -160,6 +160,84 @@ export function getToolResult(
   return "toolResult" in result ? result.toolResult : undefined;
 }
 
+const FEISHU_MENTION_ID_PATTERN = /^[a-zA-Z0-9_:-]{2,128}$/;
+
+function escapeXmlText(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function escapeXmlAttr(value: string): string {
+  return escapeXmlText(value).replaceAll('"', "&quot;");
+}
+
+type FeishuMentionSpec = {
+  openId: string;
+  name: string;
+};
+
+function resolveFeishuMentions(args: Record<string, unknown>): {
+  mentionAll: boolean;
+  users: FeishuMentionSpec[];
+} {
+  const mentionAll = args.mentionAll === true;
+  const openIds = readStringArrayParam(args, "mentionOpenIds") ?? [];
+  const names = readStringArrayParam(args, "mentionNames") ?? [];
+  const users: FeishuMentionSpec[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < openIds.length; i += 1) {
+    const openId = openIds[i]?.trim() ?? "";
+    if (!openId) {
+      continue;
+    }
+    if (!FEISHU_MENTION_ID_PATTERN.test(openId)) {
+      throw new Error(
+        `Invalid Feishu mentionOpenId: "${openId}". Provide Feishu open_id values like "ou_xxx".`,
+      );
+    }
+    if (seen.has(openId)) {
+      continue;
+    }
+    seen.add(openId);
+    const name = names[i]?.trim() || openId;
+    users.push({ openId, name });
+  }
+  return { mentionAll, users };
+}
+
+function maybeApplyFeishuMentions(params: {
+  channel: ChannelId;
+  args: Record<string, unknown>;
+  message: string;
+}): string {
+  if (params.channel !== "feishu") {
+    return params.message;
+  }
+  const mentions = resolveFeishuMentions(params.args);
+  if (!mentions.mentionAll && mentions.users.length === 0) {
+    return params.message;
+  }
+  const prefixParts: string[] = [];
+  if (mentions.mentionAll && !params.message.includes('user_id="all"')) {
+    prefixParts.push('<at user_id="all">Everyone</at>');
+  }
+  for (const user of mentions.users) {
+    if (params.message.includes(`user_id="${user.openId}"`)) {
+      continue;
+    }
+    prefixParts.push(
+      `<at user_id="${escapeXmlAttr(user.openId)}">${escapeXmlText(user.name)}</at>`,
+    );
+  }
+  if (prefixParts.length === 0) {
+    return params.message;
+  }
+  const nextMessage = params.message.trim()
+    ? `${prefixParts.join(" ")} ${params.message}`
+    : prefixParts.join(" ");
+  params.args.message = nextMessage;
+  return nextMessage;
+}
+
 function applyCrossContextMessageDecoration({
   params,
   message,
@@ -493,6 +571,11 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
     args: params,
     message,
     preferEmbeds: true,
+  });
+  message = maybeApplyFeishuMentions({
+    channel,
+    args: params,
+    message,
   });
 
   const mediaUrl = readStringParam(params, "media", { trim: false });
