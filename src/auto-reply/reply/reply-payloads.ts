@@ -183,15 +183,23 @@ export function shouldSuppressMessagingToolReplies(params: {
     if (!target?.provider) {
       return false;
     }
-    if (target.provider.trim().toLowerCase() !== provider) {
-      return false;
-    }
-    const targetKey = normalizeTargetForProvider(provider, target.to);
-    if (!targetKey) {
+    const sentProvider = target.provider.trim().toLowerCase();
+    const providerMatches =
+      sentProvider === provider || (target.tool === "message" && sentProvider === "message");
+    if (!providerMatches) {
       return false;
     }
     const targetAccount = normalizeAccountId(target.accountId);
     if (originAccount && targetAccount && originAccount !== targetAccount) {
+      return false;
+    }
+    // Message tool sends can rely on implicit current-target routing (no explicit "to").
+    // In that case provider/account match is enough to suppress duplicate final payloads.
+    if (!target.to) {
+      return true;
+    }
+    const targetKey = normalizeTargetForProvider(provider, target.to);
+    if (!targetKey) {
       return false;
     }
     return targetKey === originTarget;

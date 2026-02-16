@@ -251,14 +251,16 @@ export function extractMessagingToolSend(
       (typeof args.target === "string" ? args.target : undefined) ??
       (typeof firstTarget === "string" ? firstTarget : undefined);
     const toRaw = typeof toRawCandidate === "string" ? toRawCandidate.trim() : "";
-    if (!toRaw) {
-      return undefined;
-    }
     const providerRaw = typeof args.provider === "string" ? args.provider.trim() : "";
     const channelRaw = typeof args.channel === "string" ? args.channel.trim() : "";
     const providerHint = providerRaw || channelRaw;
     const providerId = providerHint ? normalizeChannelId(providerHint) : null;
     const provider = providerId ?? (providerHint ? providerHint.toLowerCase() : "message");
+    // message tool can omit explicit target and rely on session/current-channel defaults.
+    // Still return provider/account so downstream reply suppression can avoid duplicate sends.
+    if (!toRaw) {
+      return { tool: toolName, provider, accountId };
+    }
     const to = normalizeTargetForProvider(provider, toRaw);
     return to ? { tool: toolName, provider, accountId, to } : undefined;
   }

@@ -768,6 +768,19 @@ describe("runReplyAgent messaging tool suppression", () => {
     expect(result).toMatchObject({ text: "hello world!" });
   });
 
+  it("drops replies when message tool used implicit current target", async () => {
+    runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "hello world!" }],
+      messagingToolSentTexts: ["different message"],
+      messagingToolSentTargets: [{ tool: "message", provider: "message" }],
+      meta: {},
+    });
+
+    const result = await createRun("slack");
+
+    expect(result).toBeUndefined();
+  });
+
   it("delivers replies when account ids do not match", async () => {
     runEmbeddedPiAgentMock.mockResolvedValueOnce({
       payloads: [{ text: "hello world!" }],

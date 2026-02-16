@@ -30,9 +30,15 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
 
   const body = [
     "CRITICAL BODY CONSISTENCY: keep the same signature body across every generation.",
-    "She is an adult woman (23) with a sexy fit-curvy hourglass build: full bust, small waist,",
+    "She is an adult woman (23) with a sexy fit-curvy hourglass build: full bust, narrow waist,",
     "wide hips, round glutes, thick toned thighs, athletic but soft.",
-    "Do NOT randomize into slim/petite/flat-chested, bulky bodybuilder, or straight rectangular body.",
+    "This body must read visibly busty and curvy (大胸、大屁股、蜜桃臀、S曲线) while staying photorealistic.",
+    "WARDROBE PREFERENCE: she knows her body is attractive and naturally picks outfits that show her shape.",
+    "Even in casual/home scenes, prefer comfy but curve-aware pieces (fitted tank/tee, cropped top, leggings, shorts, body-skimming loungewear).",
+    "VISUAL READABILITY: composition, pose, and outfit must clearly show bust-waist-hip contrast in the final photo.",
+    "Prefer framing and angles that make curves obvious (e.g., mirror selfie, slight torso turn, hand-on-waist, natural hip emphasis).",
+    "Avoid loose/boxy straight-cut outfits or flat front-facing poses that hide the silhouette unless explicitly requested in the scene.",
+    "Do NOT flatten into slim/petite/flat-chested, straight rectangular body, or bulky bodybuilder shape.",
     "Preserve believable proportions and keep shape consistent across outfits, poses, and camera angles.",
   ];
 
@@ -45,6 +51,7 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
           "- Warm color grading, slightly lifted shadows, soft contrast (like a VSCO or Ulike filter)",
           "- NOT overly edited or AI-looking — it should look real but polished",
           "- The composition should feel intentionally casual (摆拍) — 'effortlessly pretty'",
+          "- Outfit should be intentionally figure-flattering and curve-emphasizing",
           "- She is photogenic and knows her angles",
         ]
       : [
@@ -55,6 +62,7 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
           "- Slightly messy, imperfect framing — she's not trying to look good, she just IS",
           "- Hair can be messy, tangled, in a lazy bun or clip",
           "- Minimal or zero makeup — bare face, maybe leftover mascara",
+          "- Casual outfit can be relaxed, but still naturally body-flattering (not baggy/shape-hiding by default)",
           "- The vibe is 'boyfriend's POV' or 'sent this to my bf without thinking'",
         ];
 
