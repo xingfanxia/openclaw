@@ -10,9 +10,33 @@ function safeTrim(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function safeStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const cleaned = value
+    .map((entry) => safeTrim(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
 export function buildInboundMetaSystemPrompt(ctx: TemplateContext): string {
   const chatType = normalizeChatType(ctx.ChatType);
   const isDirect = !chatType || chatType === "direct";
+  const mediaPaths = safeStringArray(ctx.MediaPaths);
+  const mediaUrls = safeStringArray(ctx.MediaUrls);
+  const mediaTypes = safeStringArray(ctx.MediaTypes);
+  const hasMedia =
+    Boolean(safeTrim(ctx.MediaPath)) ||
+    Boolean(safeTrim(ctx.MediaUrl)) ||
+    (mediaPaths?.length ?? 0) > 0 ||
+    (mediaUrls?.length ?? 0) > 0;
+  const mediaCount = Math.max(
+    mediaPaths?.length ?? 0,
+    mediaUrls?.length ?? 0,
+    mediaTypes?.length ?? 0,
+    hasMedia ? 1 : 0,
+  );
 
   // Keep system metadata strictly free of attacker-controlled strings (sender names, group subjects, etc.).
   // Those belong in the user-role "untrusted context" blocks.
@@ -29,6 +53,8 @@ export function buildInboundMetaSystemPrompt(ctx: TemplateContext): string {
       has_forwarded_context: Boolean(ctx.ForwardedFrom),
       has_thread_starter: Boolean(safeTrim(ctx.ThreadStarterBody)),
       history_count: Array.isArray(ctx.InboundHistory) ? ctx.InboundHistory.length : 0,
+      has_media: hasMedia ? true : undefined,
+      media_count: hasMedia ? mediaCount : undefined,
     },
   };
 
@@ -50,6 +76,9 @@ export function buildInboundUserContextPrefix(ctx: TemplateContext): string {
   const blocks: string[] = [];
   const chatType = normalizeChatType(ctx.ChatType);
   const isDirect = !chatType || chatType === "direct";
+  const mediaPaths = safeStringArray(ctx.MediaPaths);
+  const mediaUrls = safeStringArray(ctx.MediaUrls);
+  const mediaTypes = safeStringArray(ctx.MediaTypes);
 
   const conversationInfo = {
     conversation_label: safeTrim(ctx.ConversationLabel),
@@ -66,6 +95,25 @@ export function buildInboundUserContextPrefix(ctx: TemplateContext): string {
         "Conversation info (untrusted metadata):",
         "```json",
         JSON.stringify(conversationInfo, null, 2),
+        "```",
+      ].join("\n"),
+    );
+  }
+
+  const mediaInfo = {
+    primary_path: safeTrim(ctx.MediaPath),
+    primary_url: safeTrim(ctx.MediaUrl),
+    primary_type: safeTrim(ctx.MediaType),
+    paths: mediaPaths,
+    urls: mediaUrls,
+    types: mediaTypes,
+  };
+  if (Object.values(mediaInfo).some((v) => v !== undefined)) {
+    blocks.push(
+      [
+        "Media context (system-resolved, for evidence):",
+        "```json",
+        JSON.stringify(mediaInfo, null, 2),
         "```",
       ].join("\n"),
     );
