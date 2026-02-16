@@ -228,7 +228,7 @@ function inferSessionRouteChannel(params: {
   cfg: OpenClawConfig;
   sessionKey?: string;
   agentId?: string;
-}): { channel?: ChannelId; accountId?: string } {
+}): { channel?: ChannelId; accountId?: string; to?: string; threadId?: string | number } {
   const sessionKey = params.sessionKey?.trim();
   if (!sessionKey) {
     return {};
@@ -245,12 +245,14 @@ function inferSessionRouteChannel(params: {
       entry,
       requestedChannel: "last",
     });
-    if (!target.channel) {
+    if (!target.channel && !target.to && !target.accountId && target.threadId == null) {
       return {};
     }
     return {
       channel: target.channel,
       accountId: target.accountId,
+      to: target.to,
+      threadId: target.threadId,
     };
   } catch {
     return {};
@@ -761,6 +763,14 @@ export async function runMessageAction(
     }
   }
   const explicitChannel = typeof params.channel === "string" ? params.channel.trim() : "";
+  const inferredFromSession = inferSessionRouteChannel({
+    cfg,
+    sessionKey: input.sessionKey,
+    agentId: resolvedAgentId,
+  });
+  if (action === "send" && !actionHasTarget(action, params) && inferredFromSession.to) {
+    params.target = inferredFromSession.to;
+  }
   if (!explicitChannel) {
     const inferredChannel = normalizeMessageChannel(input.toolContext?.currentChannelProvider);
     if (inferredChannel && isDeliverableMessageChannel(inferredChannel)) {
@@ -768,11 +778,6 @@ export async function runMessageAction(
     }
   }
   if (!params.channel) {
-    const inferredFromSession = inferSessionRouteChannel({
-      cfg,
-      sessionKey: input.sessionKey,
-      agentId: resolvedAgentId,
-    });
     if (inferredFromSession.channel) {
       params.channel = inferredFromSession.channel;
     }
@@ -781,6 +786,9 @@ export async function runMessageAction(
     if (!existingAccountId && inferredFromSession.accountId) {
       params.accountId = inferredFromSession.accountId;
     }
+  }
+  if (action === "send" && !params.threadId && inferredFromSession.threadId != null) {
+    params.threadId = inferredFromSession.threadId;
   }
 
   applyTargetToParams({ action, args: params });
