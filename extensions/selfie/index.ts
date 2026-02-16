@@ -26,6 +26,8 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
   const face = [
     "These reference photos show the person's FACE — preserve her exact facial features,",
     "eyes, nose, lips, face shape, skin tone, and hair.",
+    "Skin quality should look well-maintained and clear from consistent skincare: natural texture is fine,",
+    "but avoid obvious acne clusters, inflamed red breakouts, or prominent irritation patches on the face.",
   ];
 
   const body = [
@@ -57,7 +59,7 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
       : [
           "IMPORTANT STYLE NOTES — this must look like a real, unfiltered, candid moment at home:",
           "- Shot on iPhone front camera, casual and unplanned",
-          "- NO beauty filter, NO skin smoothing — real skin texture, maybe a small blemish",
+          "- NO heavy beauty filter — keep real skin texture, but complexion should still look clear and cared-for",
           "- Natural indoor lighting (warm lamp, window light, screen glow) — not flattering, just real",
           "- Slightly messy, imperfect framing — she's not trying to look good, she just IS",
           "- Hair can be messy, tangled, in a lazy bun or clip",
