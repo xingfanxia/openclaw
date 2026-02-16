@@ -227,6 +227,34 @@ function compactNotifyOutput(value: string, maxChars = DEFAULT_NOTIFY_SNIPPET_CH
   return `${normalized.slice(0, safe)}…`;
 }
 
+function resolvePrimaryCommandToken(command: string): string | undefined {
+  const tokens = command
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    return undefined;
+  }
+  let idx = 0;
+  while (idx < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=.*$/.test(tokens[idx])) {
+    idx += 1;
+  }
+  if (tokens[idx] === "sudo") {
+    idx += 1;
+  }
+  const token = tokens[idx];
+  return token ? token.toLowerCase() : undefined;
+}
+
+function isBenignSearchNoMatchExit(params: { command: string; code: number | null }): boolean {
+  if (params.code !== 1) {
+    return false;
+  }
+  const primaryToken = resolvePrimaryCommandToken(params.command);
+  return primaryToken === "grep" || primaryToken === "rg";
+}
+
 export function normalizePathPrepend(entries?: string[]) {
   if (!Array.isArray(entries)) {
     return [];
@@ -669,7 +697,14 @@ export async function runExecProcess(opts: {
       }
       const durationMs = Date.now() - startedAt;
       const wasSignal = exitSignal != null;
-      const isSuccess = code === 0 && !wasSignal && !timedOut;
+      const treatAsNoMatchSuccess =
+        !timedOut &&
+        !wasSignal &&
+        isBenignSearchNoMatchExit({
+          command: opts.command,
+          code,
+        });
+      const isSuccess = (code === 0 || treatAsNoMatchSuccess) && !wasSignal && !timedOut;
       const status: "completed" | "failed" = isSuccess ? "completed" : "failed";
       markExited(session, code, exitSignal, status);
       maybeNotifyOnExit(session, status);
@@ -703,7 +738,7 @@ export async function runExecProcess(opts: {
       }
       settle({
         status: "completed",
-        exitCode: code ?? 0,
+        exitCode: treatAsNoMatchSuccess ? 0 : (code ?? 0),
         exitSignal: exitSignal ?? null,
         durationMs,
         aggregated,

@@ -15,6 +15,8 @@ import {
 } from "../../agents/tools/common.js";
 import { parseReplyDirectives } from "../../auto-reply/reply/reply-directives.js";
 import { dispatchChannelMessageAction } from "../../channels/plugins/message-actions.js";
+import { loadSessionStore, resolveStorePath } from "../../config/sessions.js";
+import { resolveThreadParentSessionKey } from "../../sessions/session-key-utils.js";
 import {
   isDeliverableMessageChannel,
   normalizeMessageChannel,
@@ -49,6 +51,7 @@ import {
 import { executePollAction, executeSendAction } from "./outbound-send-service.js";
 import { ensureOutboundSessionEntry, resolveOutboundSessionRoute } from "./outbound-session.js";
 import { resolveChannelTarget, type ResolvedMessagingTarget } from "./target-resolver.js";
+import { resolveSessionDeliveryTarget } from "./targets.js";
 import { extractToolPayload } from "./tool-payload.js";
 
 export type MessageActionRunnerGateway = {
@@ -219,6 +222,39 @@ async function resolveChannel(cfg: OpenClawConfig, params: Record<string, unknow
     channel: channelHint,
   });
   return selection.channel;
+}
+
+function inferSessionRouteChannel(params: {
+  cfg: OpenClawConfig;
+  sessionKey?: string;
+  agentId?: string;
+}): { channel?: ChannelId; accountId?: string } {
+  const sessionKey = params.sessionKey?.trim();
+  if (!sessionKey) {
+    return {};
+  }
+
+  try {
+    const storeAgentId =
+      params.agentId ?? resolveSessionAgentId({ sessionKey, config: params.cfg });
+    const storePath = resolveStorePath(params.cfg.session?.store, { agentId: storeAgentId });
+    const store = loadSessionStore(storePath);
+    const parentSessionKey = resolveThreadParentSessionKey(sessionKey);
+    const entry = store[sessionKey] ?? (parentSessionKey ? store[parentSessionKey] : undefined);
+    const target = resolveSessionDeliveryTarget({
+      entry,
+      requestedChannel: "last",
+    });
+    if (!target.channel) {
+      return {};
+    }
+    return {
+      channel: target.channel,
+      accountId: target.accountId,
+    };
+  } catch {
+    return {};
+  }
 }
 
 async function resolveActionTarget(params: {
@@ -729,6 +765,21 @@ export async function runMessageAction(
     const inferredChannel = normalizeMessageChannel(input.toolContext?.currentChannelProvider);
     if (inferredChannel && isDeliverableMessageChannel(inferredChannel)) {
       params.channel = inferredChannel;
+    }
+  }
+  if (!params.channel) {
+    const inferredFromSession = inferSessionRouteChannel({
+      cfg,
+      sessionKey: input.sessionKey,
+      agentId: resolvedAgentId,
+    });
+    if (inferredFromSession.channel) {
+      params.channel = inferredFromSession.channel;
+    }
+    const existingAccountId =
+      typeof params.accountId === "string" ? params.accountId.trim() : undefined;
+    if (!existingAccountId && inferredFromSession.accountId) {
+      params.accountId = inferredFromSession.accountId;
     }
   }
 

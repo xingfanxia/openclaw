@@ -282,6 +282,56 @@ describe("runMessageAction context isolation", () => {
     expect(result.channel).toBe("slack");
   });
 
+  it("infers channel from session route when tool context is unavailable", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "msg-route-"));
+    const storePath = path.join(tmpDir, "sessions.json");
+    const sessionKey = "agent:main:slack:channel:c12345678";
+    try {
+      await fs.writeFile(
+        storePath,
+        JSON.stringify({
+          [sessionKey]: {
+            sessionId: "s1",
+            updatedAt: Date.now(),
+            deliveryContext: {
+              channel: "slack",
+              to: "channel:C12345678",
+            },
+          },
+        }),
+      );
+
+      const multiConfig = {
+        session: { store: storePath },
+        channels: {
+          slack: {
+            botToken: "xoxb-test",
+            appToken: "xapp-test",
+          },
+          telegram: {
+            token: "tg-test",
+          },
+        },
+      } as OpenClawConfig;
+
+      const result = await runMessageAction({
+        cfg: multiConfig,
+        action: "send",
+        params: {
+          target: "#C12345678",
+          message: "hi",
+        },
+        sessionKey,
+        dryRun: true,
+      });
+
+      expect(result.kind).toBe("send");
+      expect(result.channel).toBe("slack");
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("blocks cross-provider sends by default", async () => {
     await expect(
       runMessageAction({

@@ -481,6 +481,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         defaultAccountId: accountId ?? undefined,
         gateway,
         toolContext,
+        sessionKey: options?.agentSessionKey,
         agentId: options?.agentSessionKey
           ? resolveSessionAgentId({ sessionKey: options.agentSessionKey, config: cfg })
           : undefined,
