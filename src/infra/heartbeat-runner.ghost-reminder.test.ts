@@ -144,6 +144,44 @@ describe("Ghost reminder bug (issue #13317)", () => {
     }
   });
 
+  it("uses exec completion prompt for codex wake reason with codex terminal event", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-codex-event-"));
+    const sendTelegram = vi.fn().mockResolvedValue({
+      messageId: "m1",
+      chatId: "155462274",
+    });
+    const getReplySpy = vi
+      .spyOn(replyModule, "getReplyFromConfig")
+      .mockResolvedValue({ text: "Got it, codex task failed and needs follow-up." });
+
+    try {
+      const { cfg, sessionKey } = await createConfig(tmpDir);
+      enqueueSystemEvent(
+        'Codex background job 4dc7f117 completed_with_errors. task="Fix issue #63" error=fatal: Unable to create index.lock: Permission denied',
+        { sessionKey },
+      );
+
+      const result = await runHeartbeatOnce({
+        cfg,
+        agentId: "main",
+        reason: "codex:4dc7f117:completed_with_errors",
+        deps: {
+          sendTelegram,
+        },
+      });
+
+      expect(result.status).toBe("ran");
+      expect(getReplySpy).toHaveBeenCalledTimes(1);
+      const calledCtx = getReplySpy.mock.calls[0]?.[0];
+      expect(calledCtx?.Provider).toBe("exec-event");
+      expect(calledCtx?.Body).toContain("async command you ran earlier has completed");
+      expect(calledCtx?.Body).not.toContain("scheduled reminder has been triggered");
+      expect(sendTelegram).toHaveBeenCalled();
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("uses CRON_EVENT_PROMPT when cron events are mixed with heartbeat noise", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-cron-mixed-"));
     const sendTelegram = vi.fn().mockResolvedValue({

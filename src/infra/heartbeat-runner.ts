@@ -428,7 +428,8 @@ export async function runHeartbeatOnce(opts: {
   // This saves API calls/costs when the file is effectively empty (only comments/headers).
   // EXCEPTION: Don't skip for exec events, cron events, or explicit wake requests -
   // they have pending system events to process regardless of HEARTBEAT.md content.
-  const isExecEventReason = opts.reason === "exec-event";
+  const isExecEventReason =
+    opts.reason === "exec-event" || Boolean(opts.reason?.startsWith("codex:"));
   const isCronEventReason = Boolean(opts.reason?.startsWith("cron:"));
   const isWakeReason = opts.reason === "wake" || Boolean(opts.reason?.startsWith("hook:"));
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
@@ -486,11 +487,12 @@ export async function runHeartbeatOnce(opts: {
   // Check if this is an exec event or cron event with pending system events.
   // If so, use a specialized prompt that instructs the model to relay the result
   // instead of the standard heartbeat prompt with "reply HEARTBEAT_OK".
-  const isExecEvent = opts.reason === "exec-event";
+  const isExecEvent = opts.reason === "exec-event" || Boolean(opts.reason?.startsWith("codex:"));
   const isCronEvent = Boolean(opts.reason?.startsWith("cron:"));
   const pendingEvents = isExecEvent || isCronEvent ? peekSystemEvents(sessionKey) : [];
   const cronEvents = pendingEvents.filter((evt) => isCronSystemEvent(evt));
-  const hasExecCompletion = pendingEvents.some(isExecCompletionEvent);
+  const hasExecCompletion =
+    pendingEvents.some(isExecCompletionEvent) || (isExecEvent && pendingEvents.length > 0);
   const hasCronEvents = isCronEvent && cronEvents.length > 0;
   const prompt = hasExecCompletion
     ? EXEC_EVENT_PROMPT

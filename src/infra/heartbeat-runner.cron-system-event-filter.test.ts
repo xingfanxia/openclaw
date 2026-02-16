@@ -22,6 +22,11 @@ describe("isCronSystemEvent", () => {
 
   it("returns false for exec completion events", () => {
     expect(isCronSystemEvent("Exec finished (gateway id=abc, code 0)")).toBe(false);
+    expect(
+      isCronSystemEvent(
+        'Codex background job 4dc7f117 completed_with_errors. task="Fix issue #63" error=fatal: Unable to create index.lock: Permission denied',
+      ),
+    ).toBe(false);
   });
 
   it("returns true for real cron reminder content", () => {

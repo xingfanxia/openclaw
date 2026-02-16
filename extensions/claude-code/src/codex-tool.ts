@@ -231,7 +231,8 @@ function emitTerminalJobEvent(api: OpenClawPluginApi, job: CodexJob): void {
       contextKey: `codex:${job.id}`,
     });
     api.runtime.system.requestHeartbeatNow({
-      reason: `codex:${job.id}:${job.status}`,
+      // Reuse exec-event wake path so heartbeat can reliably relay completion/failure details.
+      reason: "exec-event",
       coalesceMs: 0,
     });
   } catch {

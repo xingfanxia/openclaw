@@ -158,6 +158,6 @@ describe("codex tool background jobs", () => {
     const eventCall = enqueueSystemEvent.mock.calls.at(-1);
     expect(String(eventCall?.[0] ?? "")).toContain(jobId.slice(0, 8));
     expect(eventCall?.[1]).toMatchObject({ sessionKey: "agent:panpanmao-bug-reporter:main" });
-    expect(requestHeartbeatNow).toHaveBeenCalled();
+    expect(requestHeartbeatNow).toHaveBeenCalledWith({ reason: "exec-event", coalesceMs: 0 });
   });
 });
