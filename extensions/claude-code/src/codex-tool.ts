@@ -78,6 +78,7 @@ type CodexJob = {
   createdAt: number;
   startedAt?: number;
   updatedAt: number;
+  sessionKey?: string;
   summary?: CodexSummary;
   error?: string;
 };
@@ -85,6 +86,10 @@ type CodexJob = {
 type CodexAbortState = {
   controller: AbortController;
   reason?: "cancelled" | "timeout";
+};
+
+type CodexToolContext = {
+  sessionKey?: string;
 };
 
 const LOG_DIR = "/tmp/openclaw";
@@ -195,6 +200,43 @@ function resolveTimeoutMs(params: { requested?: number; fallback?: number; max?:
   const cappedMax = normalizeTimeoutMs(params.max) ?? DEFAULT_MAX_TIMEOUT_MS;
   const base = requested ?? fallback;
   return Math.max(1_000, Math.min(cappedMax, base));
+}
+
+function buildTerminalEventText(job: CodexJob): string {
+  const id = job.id.slice(0, 8);
+  const status = job.status;
+  const preview = job.taskPreview.trim();
+  const summary = job.summary;
+  const detail = (() => {
+    if (status === "success") {
+      const changed = summary?.filesChanged?.length ?? 0;
+      return changed > 0 ? `files=${changed}` : "completed";
+    }
+    const err = (job.error ?? summary?.error ?? summary?.errors?.[0] ?? "").trim();
+    return err ? `error=${err.slice(0, 180)}` : "needs follow-up";
+  })();
+  const head = `Codex background job ${id} ${status}.`;
+  const body = preview ? ` task="${preview.slice(0, 120)}"` : "";
+  return `${head}${body} ${detail}`;
+}
+
+function emitTerminalJobEvent(api: OpenClawPluginApi, job: CodexJob): void {
+  const sessionKey = job.sessionKey?.trim();
+  if (!sessionKey) {
+    return;
+  }
+  try {
+    api.runtime.system.enqueueSystemEvent(buildTerminalEventText(job), {
+      sessionKey,
+      contextKey: `codex:${job.id}`,
+    });
+    api.runtime.system.requestHeartbeatNow({
+      reason: `codex:${job.id}:${job.status}`,
+      coalesceMs: 0,
+    });
+  } catch {
+    // Best effort only.
+  }
 }
 
 async function runCodexTask(params: {
@@ -375,7 +417,11 @@ async function runCodexTask(params: {
   }
 }
 
-export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegistry): AnyAgentTool {
+export function createCodexTool(
+  api: OpenClawPluginApi,
+  registry?: ProjectRegistry,
+  toolCtx?: CodexToolContext,
+): AnyAgentTool {
   return {
     name: "codex",
     description: [
@@ -632,6 +678,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
           timeoutMs,
           createdAt: now,
           updatedAt: now,
+          sessionKey: toolCtx?.sessionKey,
         };
         CODEX_JOBS.set(jobId, job);
         CODEX_JOB_ABORT_STATES.set(jobId, abortState);
@@ -678,6 +725,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
             current.updatedAt = Date.now();
             CODEX_JOBS.set(jobId, current);
             CODEX_JOB_ABORT_STATES.delete(jobId);
+            emitTerminalJobEvent(api, current);
             pruneCodexJobs();
           })
           .catch((err) => {
@@ -692,6 +740,7 @@ export function createCodexTool(api: OpenClawPluginApi, registry?: ProjectRegist
             current.updatedAt = Date.now();
             CODEX_JOBS.set(jobId, current);
             CODEX_JOB_ABORT_STATES.delete(jobId);
+            emitTerminalJobEvent(api, current);
             pruneCodexJobs();
           });
 

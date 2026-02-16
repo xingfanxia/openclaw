@@ -43,7 +43,7 @@ export default function register(api: OpenClawPluginApi) {
       if (ctx.sandboxed) {
         return null;
       }
-      return createCodexTool(api, registry);
+      return createCodexTool(api, registry, ctx);
     },
     { optional: true },
   );

@@ -24,12 +24,19 @@ type ToolResult = {
   details: Record<string, unknown>;
 };
 
-async function createTool(pluginConfig?: Record<string, unknown>) {
+async function createTool(
+  pluginConfig?: Record<string, unknown>,
+  opts?: {
+    apiPatch?: Record<string, unknown>;
+    toolCtx?: { sessionKey?: string };
+  },
+) {
   const { createCodexTool } = await import("./codex-tool.js");
   const api = {
     pluginConfig,
+    ...opts?.apiPatch,
   } as unknown as OpenClawPluginApi;
-  return createCodexTool(api);
+  return createCodexTool(api, undefined, opts?.toolCtx);
 }
 
 describe("codex tool background jobs", () => {
@@ -114,5 +121,43 @@ describe("codex tool background jobs", () => {
     expect(Number(status.details.stalledForMs)).toBeGreaterThan(0);
 
     await tool.execute("t-8", { action: "cancel", jobId });
+  });
+
+  it("emits terminal system event and heartbeat wake for background jobs", async () => {
+    const enqueueSystemEvent = vi.fn();
+    const requestHeartbeatNow = vi.fn();
+    const tool = await createTool(undefined, {
+      apiPatch: {
+        runtime: {
+          system: {
+            enqueueSystemEvent,
+            requestHeartbeatNow,
+          },
+        },
+      },
+      toolCtx: { sessionKey: "agent:panpanmao-bug-reporter:main" },
+    });
+
+    const accepted = (await tool.execute("t-9", {
+      action: "run",
+      background: true,
+      task: "terminal notify",
+      timeoutMs: 30_000,
+    })) as ToolResult;
+    const jobId = String(accepted.details.jobId ?? "");
+    expect(jobId).not.toBe("");
+
+    await tool.execute("t-10", {
+      action: "cancel",
+      jobId,
+    });
+
+    await vi.waitFor(() => {
+      expect(enqueueSystemEvent).toHaveBeenCalled();
+    });
+    const eventCall = enqueueSystemEvent.mock.calls.at(-1);
+    expect(String(eventCall?.[0] ?? "")).toContain(jobId.slice(0, 8));
+    expect(eventCall?.[1]).toMatchObject({ sessionKey: "agent:panpanmao-bug-reporter:main" });
+    expect(requestHeartbeatNow).toHaveBeenCalled();
   });
 });
