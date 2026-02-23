@@ -1,12 +1,11 @@
-import type { CliDeps } from "../cli/deps.js";
-import type { RuntimeEnv } from "../runtime.js";
 import { listAgentIds } from "../agents/agent-scope.js";
-import { DEFAULT_CHAT_CHANNEL } from "../channels/registry.js";
 import { formatCliCommand } from "../cli/command-format.js";
+import type { CliDeps } from "../cli/deps.js";
 import { withProgress } from "../cli/progress.js";
 import { loadConfig } from "../config/config.js";
 import { callGateway, randomIdempotencyKey } from "../gateway/call.js";
 import { normalizeAgentId } from "../routing/session-key.js";
+import type { RuntimeEnv } from "../runtime.js";
 import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
@@ -39,6 +38,7 @@ const TRANSIENT_GATEWAY_ERROR_PATTERNS = [
   /gateway closed \(1012\b/i,
   /gateway timeout after /i,
 ];
+const NO_GATEWAY_TIMEOUT_MS = 2_147_000_000;
 
 export type AgentCliOpts = {
   message: string;
@@ -86,8 +86,8 @@ function parseTimeoutSeconds(opts: { cfg: ReturnType<typeof loadConfig>; timeout
     opts.timeout !== undefined
       ? Number.parseInt(String(opts.timeout), 10)
       : (opts.cfg.agents?.defaults?.timeoutSeconds ?? 600);
-  if (Number.isNaN(raw) || raw <= 0) {
-    throw new Error("--timeout must be a positive integer (seconds)");
+  if (Number.isNaN(raw) || raw < 0) {
+    throw new Error("--timeout must be a non-negative integer (seconds; 0 means no timeout)");
   }
   return raw;
 }
@@ -133,7 +133,10 @@ export async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: Runtim
     }
   }
   const timeoutSeconds = parseTimeoutSeconds({ cfg, timeout: opts.timeout });
-  const gatewayTimeoutMs = Math.max(10_000, (timeoutSeconds + 30) * 1000);
+  const gatewayTimeoutMs =
+    timeoutSeconds === 0
+      ? NO_GATEWAY_TIMEOUT_MS // no timeout (timer-safe max)
+      : Math.max(10_000, (timeoutSeconds + 30) * 1000);
 
   const sessionKey = resolveSessionKeyForRequest({
     cfg,
@@ -142,7 +145,7 @@ export async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: Runtim
     sessionId: opts.sessionId,
   }).sessionKey;
 
-  const channel = normalizeMessageChannel(opts.channel) ?? DEFAULT_CHAT_CHANNEL;
+  const channel = normalizeMessageChannel(opts.channel);
   const idempotencyKey = opts.runId?.trim() || randomIdempotencyKey();
 
   const response = await withProgress(

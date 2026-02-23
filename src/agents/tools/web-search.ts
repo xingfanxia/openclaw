@@ -1,10 +1,10 @@
 import { Type } from "@sinclair/typebox";
-import type { OpenClawConfig } from "../../config/config.js";
-import type { AnyAgentTool } from "./common.js";
 import { formatCliCommand } from "../../cli/command-format.js";
+import type { OpenClawConfig } from "../../config/config.js";
 import { wrapWebContent } from "../../security/external-content.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
 import { optionalStringEnum } from "../schema/typebox.js";
+import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
 import {
   CacheEntry,
@@ -116,6 +116,7 @@ type GrokSearchResponse = {
   output?: Array<{
     type?: string;
     role?: string;
+    text?: string; // present when type === "output_text" (top-level output_text block)
     content?: Array<{
       type?: string;
       text?: string;
@@ -125,6 +126,12 @@ type GrokSearchResponse = {
         start_index?: number;
         end_index?: number;
       }>;
+    }>;
+    annotations?: Array<{
+      type?: string;
+      url?: string;
+      start_index?: number;
+      end_index?: number;
     }>;
   }>;
   output_text?: string; // deprecated field - kept for backwards compatibility
@@ -174,17 +181,32 @@ function extractGrokContent(data: GrokSearchResponse): {
 } {
   // xAI Responses API format: find the message output with text content
   for (const output of data.output ?? []) {
-    if (output.type !== "message") {
-      continue;
-    }
-    for (const block of output.content ?? []) {
-      if (block.type === "output_text" && typeof block.text === "string" && block.text) {
-        // Extract url_citation annotations from this content block
-        const urls = (block.annotations ?? [])
-          .filter((a) => a.type === "url_citation" && typeof a.url === "string")
-          .map((a) => a.url as string);
-        return { text: block.text, annotationCitations: [...new Set(urls)] };
+    if (output.type === "message") {
+      for (const block of output.content ?? []) {
+        if (block.type === "output_text" && typeof block.text === "string" && block.text) {
+          const urls = (block.annotations ?? [])
+            .filter((a) => a.type === "url_citation" && typeof a.url === "string")
+            .map((a) => a.url as string);
+          return { text: block.text, annotationCitations: [...new Set(urls)] };
+        }
       }
+    }
+    // Some xAI responses place output_text blocks directly in the output array
+    // without a message wrapper.
+    if (
+      output.type === "output_text" &&
+      "text" in output &&
+      typeof output.text === "string" &&
+      output.text
+    ) {
+      const rawAnnotations =
+        "annotations" in output && Array.isArray(output.annotations) ? output.annotations : [];
+      const urls = rawAnnotations
+        .filter(
+          (a: Record<string, unknown>) => a.type === "url_citation" && typeof a.url === "string",
+        )
+        .map((a: Record<string, unknown>) => a.url as string);
+      return { text: output.text, annotationCitations: [...new Set(urls)] };
     }
   }
   // Fallback: deprecated output_text field
@@ -527,6 +549,12 @@ function resolveSiteName(url: string | undefined): string | undefined {
   }
 }
 
+async function throwWebSearchApiError(res: Response, providerLabel: string): Promise<never> {
+  const detailResult = await readResponseText(res, { maxBytes: 64_000 });
+  const detail = detailResult.text;
+  throw new Error(`${providerLabel} API error (${res.status}): ${detail || res.statusText}`);
+}
+
 async function runPerplexitySearch(params: {
   query: string;
   apiKey: string;
@@ -559,8 +587,7 @@ async function runPerplexitySearch(params: {
   });
 
   if (!res.ok) {
-    const detail = await readResponseText(res);
-    throw new Error(`Perplexity API error (${res.status}): ${detail || res.statusText}`);
+    return throwWebSearchApiError(res, "Perplexity");
   }
 
   const data = (await res.json()) as PerplexitySearchResponse;
@@ -608,8 +635,7 @@ async function runGrokSearch(params: {
   });
 
   if (!res.ok) {
-    const detail = await readResponseText(res);
-    throw new Error(`xAI API error (${res.status}): ${detail || res.statusText}`);
+    return throwWebSearchApiError(res, "xAI");
   }
 
   const data = (await res.json()) as GrokSearchResponse;
@@ -815,7 +841,8 @@ async function runWebSearch(params: {
   });
 
   if (!res.ok) {
-    const detail = await readResponseText(res);
+    const detailResult = await readResponseText(res, { maxBytes: 64_000 });
+    const detail = detailResult.text;
     throw new Error(`Brave Search API error (${res.status}): ${detail || res.statusText}`);
   }
 

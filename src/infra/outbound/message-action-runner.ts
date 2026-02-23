@@ -1,12 +1,4 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import type {
-  ChannelId,
-  ChannelMessageActionName,
-  ChannelThreadingToolContext,
-} from "../../channels/plugins/types.js";
-import type { OpenClawConfig } from "../../config/config.js";
-import type { OutboundSendDeps } from "./deliver.js";
-import type { MessagePollResult, MessageSendResult } from "./message.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import {
   readNumberParam,
@@ -15,6 +7,12 @@ import {
 } from "../../agents/tools/common.js";
 import { parseReplyDirectives } from "../../auto-reply/reply/reply-directives.js";
 import { dispatchChannelMessageAction } from "../../channels/plugins/message-actions.js";
+import type {
+  ChannelId,
+  ChannelMessageActionName,
+  ChannelThreadingToolContext,
+} from "../../channels/plugins/types.js";
+import type { OpenClawConfig } from "../../config/config.js";
 import { loadSessionStore, resolveStorePath } from "../../config/sessions.js";
 import { resolveThreadParentSessionKey } from "../../sessions/session-key-utils.js";
 import {
@@ -29,6 +27,7 @@ import {
   resolveMessageChannelSelection,
 } from "./channel-selection.js";
 import { applyTargetToParams } from "./channel-target.js";
+import type { OutboundSendDeps } from "./deliver.js";
 import {
   hydrateSendAttachmentParams,
   hydrateSetGroupIconParams,
@@ -36,11 +35,13 @@ import {
   normalizeSandboxMediaParams,
   parseButtonsParam,
   parseCardParam,
+  parseComponentsParam,
   readBooleanParam,
   resolveSlackAutoThreadId,
   resolveTelegramAutoThreadId,
 } from "./message-action-params.js";
 import { actionHasTarget, actionRequiresTarget } from "./message-action-spec.js";
+import type { MessagePollResult, MessageSendResult } from "./message.js";
 import {
   applyCrossContextDecoration,
   buildCrossContextDecoration,
@@ -95,6 +96,7 @@ export type RunMessageActionParams = {
   action: ChannelMessageActionName;
   params: Record<string, unknown>;
   defaultAccountId?: string;
+  requesterSenderId?: string | null;
   toolContext?: ChannelThreadingToolContext;
   gateway?: MessageActionRunnerGateway;
   deps?: OutboundSendDeps;
@@ -242,21 +244,21 @@ function applyCrossContextMessageDecoration({
   params,
   message,
   decoration,
-  preferEmbeds,
+  preferComponents,
 }: {
   params: Record<string, unknown>;
   message: string;
   decoration: CrossContextDecoration;
-  preferEmbeds: boolean;
+  preferComponents: boolean;
 }): string {
   const applied = applyCrossContextDecoration({
     message,
     decoration,
-    preferEmbeds,
+    preferComponents,
   });
   params.message = applied.message;
-  if (applied.embeds?.length) {
-    params.embeds = applied.embeds;
+  if (applied.componentsBuilder) {
+    params.components = applied.componentsBuilder;
   }
   return applied.message;
 }
@@ -270,7 +272,7 @@ async function maybeApplyCrossContextMarker(params: {
   accountId?: string | null;
   args: Record<string, unknown>;
   message: string;
-  preferEmbeds: boolean;
+  preferComponents: boolean;
 }): Promise<string> {
   if (!shouldApplyCrossContextMarker(params.action) || !params.toolContext) {
     return params.message;
@@ -289,7 +291,7 @@ async function maybeApplyCrossContextMarker(params: {
     params: params.args,
     message: params.message,
     decoration,
-    preferEmbeds: params.preferEmbeds,
+    preferComponents: params.preferComponents,
   });
 }
 
@@ -511,10 +513,11 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
     readStringParam(params, "path", { trim: false }) ??
     readStringParam(params, "filePath", { trim: false });
   const hasCard = params.card != null && typeof params.card === "object";
+  const hasComponents = params.components != null && typeof params.components === "object";
   const caption = readStringParam(params, "caption", { allowEmpty: true }) ?? "";
   let message =
     readStringParam(params, "message", {
-      required: !mediaHint && !hasCard,
+      required: !mediaHint && !hasCard && !hasComponents,
       allowEmpty: true,
     }) ?? "";
   if (message.includes("\\n")) {
@@ -570,7 +573,7 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
     accountId,
     args: params,
     message,
-    preferEmbeds: true,
+    preferComponents: true,
   });
   message = maybeApplyFeishuMentions({
     channel,
@@ -585,7 +588,7 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
       message = "";
     }
   }
-  if (!message.trim() && !mediaUrl && mergedMediaUrls.length === 0 && !hasCard) {
+  if (!message.trim() && !mediaUrl && mergedMediaUrls.length === 0 && !hasCard && !hasComponents) {
     throw new Error("send requires text or media");
   }
   params.message = message;
@@ -622,6 +625,12 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
       route: outboundRoute,
     });
   }
+  if (outboundRoute && !dryRun) {
+    params.__sessionKey = outboundRoute.sessionKey;
+  }
+  if (agentId) {
+    params.__agentId = agentId;
+  }
   const mirrorMediaUrls =
     mergedMediaUrls.length > 0 ? mergedMediaUrls : mediaUrl ? [mediaUrl] : undefined;
   throwIfAborted(abortSignal);
@@ -630,6 +639,7 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
       cfg,
       channel,
       params,
+      agentId,
       accountId: accountId ?? undefined,
       gateway,
       toolContext: input.toolContext,
@@ -722,7 +732,7 @@ async function handlePollAction(ctx: ResolvedActionContext): Promise<MessageActi
     accountId,
     args: params,
     message: base,
-    preferEmbeds: true,
+    preferComponents: false,
   });
 
   const poll = await executePollAction({
@@ -780,6 +790,7 @@ async function handlePluginAction(ctx: ResolvedActionContext): Promise<MessageAc
     cfg,
     params,
     accountId: accountId ?? undefined,
+    requesterSenderId: input.requesterSenderId ?? undefined,
     gateway,
     toolContext: input.toolContext,
     dryRun,
@@ -810,6 +821,7 @@ export async function runMessageAction(
       : undefined);
   parseButtonsParam(params);
   parseCardParam(params);
+  parseComponentsParam(params);
 
   const action = input.action;
   if (action === "broadcast") {

@@ -1,4 +1,4 @@
-FROM node:22-bookworm
+FROM node:22-bookworm@sha256:cd7bcd2e7a1e6f72052feb023c7f6b722205d3fcab7bbcbd2d1bfdab10b1e935
 
 # Install Bun (required for build scripts)
 RUN curl -fsSL https://bun.sh/install | bash
@@ -7,6 +7,7 @@ ENV PATH="/root/.bun/bin:${PATH}"
 RUN corepack enable
 
 WORKDIR /app
+RUN chown node:node /app
 
 ARG OPENCLAW_DOCKER_APT_PACKAGES=""
 RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
@@ -16,23 +17,42 @@ RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
       rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
     fi
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY ui/package.json ./ui/package.json
+COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY --chown=node:node ui/package.json ./ui/package.json
 # Copy extension package.json files that have external deps (pnpm needs them early)
-COPY extensions/claude-code/package.json ./extensions/claude-code/package.json
-COPY extensions/security-filter/package.json ./extensions/security-filter/package.json
-COPY extensions/gmail-manager/package.json ./extensions/gmail-manager/package.json
-COPY extensions/calendar-manager/package.json ./extensions/calendar-manager/package.json
-COPY extensions/drive-manager/package.json ./extensions/drive-manager/package.json
-COPY extensions/notion-manager/package.json ./extensions/notion-manager/package.json
-COPY extensions/obsidian-manager/package.json ./extensions/obsidian-manager/package.json
-COPY extensions/yt-downloader/package.json ./extensions/yt-downloader/package.json
-COPY patches ./patches
-COPY scripts ./scripts
+COPY --chown=node:node extensions/claude-code/package.json ./extensions/claude-code/package.json
+COPY --chown=node:node extensions/security-filter/package.json ./extensions/security-filter/package.json
+COPY --chown=node:node extensions/gmail-manager/package.json ./extensions/gmail-manager/package.json
+COPY --chown=node:node extensions/calendar-manager/package.json ./extensions/calendar-manager/package.json
+COPY --chown=node:node extensions/drive-manager/package.json ./extensions/drive-manager/package.json
+COPY --chown=node:node extensions/notion-manager/package.json ./extensions/notion-manager/package.json
+COPY --chown=node:node extensions/obsidian-manager/package.json ./extensions/obsidian-manager/package.json
+COPY --chown=node:node extensions/yt-downloader/package.json ./extensions/yt-downloader/package.json
+COPY --chown=node:node patches ./patches
+COPY --chown=node:node scripts ./scripts
 
+USER node
 RUN pnpm install --frozen-lockfile
 
-COPY . .
+# Optionally install Chromium and Xvfb for browser automation.
+# Build with: docker build --build-arg OPENCLAW_INSTALL_BROWSER=1 ...
+# Adds ~300MB but eliminates the 60-90s Playwright install on every container start.
+# Must run after pnpm install so playwright-core is available in node_modules.
+USER root
+ARG OPENCLAW_INSTALL_BROWSER=""
+RUN if [ -n "$OPENCLAW_INSTALL_BROWSER" ]; then \
+      apt-get update && \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb && \
+      mkdir -p /home/node/.cache/ms-playwright && \
+      PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright \
+      node /app/node_modules/playwright-core/cli.js install --with-deps chromium && \
+      chown -R node:node /home/node/.cache/ms-playwright && \
+      apt-get clean && \
+      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
+    fi
+
+USER node
+COPY --chown=node:node . .
 RUN pnpm build
 # Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
 ENV OPENCLAW_PREFER_PNPM=1
@@ -76,6 +96,7 @@ RUN chown -R node:node /app
 # let the CLIs write session data, caches, and skills.
 RUN mkdir -p /home/node/.claude /home/node/.codex \
     && chown -R node:node /home/node/.claude /home/node/.codex
+
 
 # Security hardening: Run as non-root user
 # The node:22-bookworm image includes a 'node' user (uid 1000)

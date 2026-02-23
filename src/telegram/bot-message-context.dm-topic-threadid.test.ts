@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { buildTelegramMessageContext } from "./bot-message-context.js";
+import { buildTelegramMessageContextForTest } from "./bot-message-context.test-harness.js";
 
 // Mock recordInboundSession to capture updateLastRoute parameter
 const recordInboundSessionMock = vi.fn().mockResolvedValue(undefined);
@@ -8,52 +8,15 @@ vi.mock("../channels/session.js", () => ({
 }));
 
 describe("buildTelegramMessageContext DM topic threadId in deliveryContext (#8891)", () => {
-  const baseConfig = {
-    agents: { defaults: { model: "anthropic/claude-opus-4-5", workspace: "/tmp/openclaw" } },
-    channels: { telegram: {} },
-    messages: { groupChat: { mentionPatterns: [] } },
-  } as never;
-
   async function buildCtx(params: {
     message: Record<string, unknown>;
     options?: Record<string, unknown>;
-    resolveGroupActivation?: () => unknown;
-  }): Promise<Awaited<ReturnType<typeof buildTelegramMessageContext>>> {
-    return await buildTelegramMessageContext({
-      primaryCtx: {
-        message: {
-          message_id: 1,
-          date: 1700000000,
-          text: "hello",
-          from: { id: 42, first_name: "Alice" },
-          ...params.message,
-        },
-        me: { id: 7, username: "bot" },
-      } as never,
-      allMedia: [],
-      storeAllowFrom: [],
-      options: params.options ?? {},
-      bot: {
-        api: {
-          sendChatAction: vi.fn(),
-          setMessageReaction: vi.fn(),
-        },
-      } as never,
-      cfg: baseConfig,
-      account: { accountId: "default" } as never,
-      historyLimit: 0,
-      groupHistories: new Map(),
-      dmPolicy: "open",
-      allowFrom: [],
-      groupAllowFrom: [],
-      ackReactionScope: "off",
-      logger: { info: vi.fn() },
-      resolveGroupActivation: params.resolveGroupActivation ?? (() => undefined),
-      resolveGroupRequireMention: () => false,
-      resolveTelegramGroupConfig: () => ({
-        groupConfig: { requireMention: false },
-        topicConfig: undefined,
-      }),
+    resolveGroupActivation?: () => boolean | undefined;
+  }) {
+    return await buildTelegramMessageContextForTest({
+      message: params.message,
+      options: params.options,
+      resolveGroupActivation: params.resolveGroupActivation,
     });
   }
 
@@ -81,8 +44,9 @@ describe("buildTelegramMessageContext DM topic threadId in deliveryContext (#889
     // Persisting it causes heartbeat/proactive sends to include a stale
     // message_thread_id that fails with "thread not found".
     // Thread-specific sessions handle thread routing via resolveThreadSessionKeys.
-    const updateLastRoute = getUpdateLastRoute() as { threadId?: string } | undefined;
+    const updateLastRoute = getUpdateLastRoute() as { threadId?: string; to?: string } | undefined;
     expect(updateLastRoute).toBeDefined();
+    expect(updateLastRoute?.to).toBe("telegram:1234");
     expect(updateLastRoute?.threadId).toBeUndefined();
   });
 
@@ -97,8 +61,9 @@ describe("buildTelegramMessageContext DM topic threadId in deliveryContext (#889
     expect(recordInboundSessionMock).toHaveBeenCalled();
 
     // Check that updateLastRoute does NOT include threadId
-    const updateLastRoute = getUpdateLastRoute() as { threadId?: string } | undefined;
+    const updateLastRoute = getUpdateLastRoute() as { threadId?: string; to?: string } | undefined;
     expect(updateLastRoute).toBeDefined();
+    expect(updateLastRoute?.to).toBe("telegram:1234");
     expect(updateLastRoute?.threadId).toBeUndefined();
   });
 

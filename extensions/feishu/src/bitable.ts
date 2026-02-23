@@ -1,7 +1,7 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { Type } from "@sinclair/typebox";
-import type { FeishuConfig } from "./types.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { createFeishuClient } from "./client.js";
+import type { FeishuConfig } from "./types.js";
 
 // ============ Helpers ============
 
@@ -255,6 +255,171 @@ function resolveBitableFieldTypeId(fieldType: string): number {
   return id;
 }
 
+
+/** Logger interface for cleanup operations */
+type CleanupLogger = {
+  debug: (msg: string) => void;
+  warn: (msg: string) => void;
+};
+
+/** Default field types created for new Bitable tables (to be cleaned up) */
+const DEFAULT_CLEANUP_FIELD_TYPES = new Set([3, 5, 17]); // SingleSelect, DateTime, Attachment
+
+/** Clean up default placeholder rows and fields in a newly created Bitable table */
+async function cleanupNewBitable(
+  client: ReturnType<typeof createFeishuClient>,
+  appToken: string,
+  tableId: string,
+  tableName: string,
+  logger: CleanupLogger,
+): Promise<{ cleanedRows: number; cleanedFields: number }> {
+  let cleanedRows = 0;
+  let cleanedFields = 0;
+
+  // Step 1: Clean up default fields
+  const fieldsRes = await client.bitable.appTableField.list({
+    path: { app_token: appToken, table_id: tableId },
+  });
+
+  if (fieldsRes.code === 0 && fieldsRes.data?.items) {
+    // Step 1a: Rename primary field to the table name (works for both Feishu and Lark)
+    const primaryField = fieldsRes.data.items.find((f) => f.is_primary);
+    if (primaryField?.field_id) {
+      try {
+        const newFieldName = tableName.length <= 20 ? tableName : "Name";
+        await client.bitable.appTableField.update({
+          path: {
+            app_token: appToken,
+            table_id: tableId,
+            field_id: primaryField.field_id,
+          },
+          data: {
+            field_name: newFieldName,
+            type: 1,
+          },
+        });
+        cleanedFields++;
+      } catch (err) {
+        logger.debug(`Failed to rename primary field: ${err}`);
+      }
+    }
+
+    // Step 1b: Delete default placeholder fields by type (works for both Feishu and Lark)
+    const defaultFieldsToDelete = fieldsRes.data.items.filter(
+      (f) => !f.is_primary && DEFAULT_CLEANUP_FIELD_TYPES.has(f.type ?? 0),
+    );
+
+    for (const field of defaultFieldsToDelete) {
+      if (field.field_id) {
+        try {
+          await client.bitable.appTableField.delete({
+            path: {
+              app_token: appToken,
+              table_id: tableId,
+              field_id: field.field_id,
+            },
+          });
+          cleanedFields++;
+        } catch (err) {
+          logger.debug(`Failed to delete default field ${field.field_name}: ${err}`);
+        }
+      }
+    }
+  }
+
+  // Step 2: Delete empty placeholder rows (batch when possible)
+  const recordsRes = await client.bitable.appTableRecord.list({
+    path: { app_token: appToken, table_id: tableId },
+    params: { page_size: 100 },
+  });
+
+  if (recordsRes.code === 0 && recordsRes.data?.items) {
+    const emptyRecordIds = recordsRes.data.items
+      .filter((r) => !r.fields || Object.keys(r.fields).length === 0)
+      .map((r) => r.record_id)
+      .filter((id): id is string => Boolean(id));
+
+    if (emptyRecordIds.length > 0) {
+      try {
+        await client.bitable.appTableRecord.batchDelete({
+          path: { app_token: appToken, table_id: tableId },
+          data: { records: emptyRecordIds },
+        });
+        cleanedRows = emptyRecordIds.length;
+      } catch {
+        // Fallback: delete one by one if batch API is unavailable
+        for (const recordId of emptyRecordIds) {
+          try {
+            await client.bitable.appTableRecord.delete({
+              path: { app_token: appToken, table_id: tableId, record_id: recordId },
+            });
+            cleanedRows++;
+          } catch (err) {
+            logger.debug(`Failed to delete empty row ${recordId}: ${err}`);
+          }
+        }
+      }
+    }
+  }
+
+  return { cleanedRows, cleanedFields };
+}
+
+async function createApp(
+  client: ReturnType<typeof createFeishuClient>,
+  name: string,
+  folderToken?: string,
+  logger?: CleanupLogger,
+) {
+  const res = await client.bitable.app.create({
+    data: {
+      name,
+      ...(folderToken && { folder_token: folderToken }),
+    },
+  });
+  if (res.code !== 0) {
+    throw new Error(res.msg);
+  }
+
+  const appToken = res.data?.app?.app_token;
+  if (!appToken) {
+    throw new Error("Failed to create Bitable: no app_token returned");
+  }
+
+  const log: CleanupLogger = logger ?? { debug: () => {}, warn: () => {} };
+  let tableId: string | undefined;
+  let cleanedRows = 0;
+  let cleanedFields = 0;
+
+  try {
+    const tablesRes = await client.bitable.appTable.list({
+      path: { app_token: appToken },
+    });
+    if (tablesRes.code === 0 && tablesRes.data?.items && tablesRes.data.items.length > 0) {
+      tableId = tablesRes.data.items[0].table_id ?? undefined;
+      if (tableId) {
+        const cleanup = await cleanupNewBitable(client, appToken, tableId, name, log);
+        cleanedRows = cleanup.cleanedRows;
+        cleanedFields = cleanup.cleanedFields;
+      }
+    }
+  } catch (err) {
+    log.debug(`Cleanup failed (non-critical): ${err}`);
+  }
+
+  return {
+    app_token: appToken,
+    table_id: tableId,
+    name: res.data?.app?.name,
+    url: res.data?.app?.url,
+    cleaned_placeholder_rows: cleanedRows,
+    cleaned_default_fields: cleanedFields,
+    hint: tableId
+      ? `Table created. Use app_token="${appToken}" and table_id="${tableId}" for other bitable tools.`
+      : "Table created. Use feishu_bitable_get_meta to get table_id and field details.",
+  };
+}
+
 async function createField(
   client: ReturnType<typeof createFeishuClient>,
   appToken: string,
@@ -279,79 +444,6 @@ async function createField(
     path: { app_token: appToken, table_id: tableId },
     data: {
       field_name: params.field_name,
-      type,
-      ...(Object.keys(property).length ? { property } : {}),
-      ...(params.description?.trim()
-        ? { description: { text: params.description.trim(), disable_sync: false } }
-        : {}),
-    },
-  });
-  if (res.code !== 0) {
-    throw new Error(res.msg);
-  }
-
-  return {
-    field: res.data?.field,
-  };
-}
-
-async function getFieldById(
-  client: ReturnType<typeof createFeishuClient>,
-  appToken: string,
-  tableId: string,
-  fieldId: string,
-) {
-  const { fields } = await listFields(client, appToken, tableId);
-  const match = fields.find((f) => f.field_id === fieldId);
-  if (!match) {
-    throw new Error(
-      `Field not found: field_id="${fieldId}". Use feishu_bitable_list_fields to inspect fields.`,
-    );
-  }
-  return match;
-}
-
-async function updateField(
-  client: ReturnType<typeof createFeishuClient>,
-  appToken: string,
-  tableId: string,
-  fieldId: string,
-  params: {
-    field_name?: string;
-    field_type?: string;
-    options?: string[];
-    description?: string;
-  },
-) {
-  const existing = await getFieldById(client, appToken, tableId, fieldId);
-
-  const fieldName = params.field_name?.trim() || existing.field_name || "";
-  if (!fieldName) {
-    throw new Error("field_name is required (or the existing field must have a name).");
-  }
-
-  const type =
-    typeof params.field_type === "string" && params.field_type.trim()
-      ? resolveBitableFieldTypeId(params.field_type)
-      : typeof existing.type === "number"
-        ? existing.type
-        : undefined;
-  if (type === undefined) {
-    throw new Error("field_type is required (or the existing field must have a valid type).");
-  }
-
-  const property: Record<string, unknown> = {};
-  if ((type === 3 || type === 4) && params.options?.length) {
-    property.options = params.options
-      .map((name) => (typeof name === "string" ? name.trim() : ""))
-      .filter(Boolean)
-      .map((name) => ({ name }));
-  }
-
-  const res = await client.bitable.appTableField.update({
-    path: { app_token: appToken, table_id: tableId, field_id: fieldId },
-    data: {
-      field_name: fieldName,
       type,
       ...(Object.keys(property).length ? { property } : {}),
       ...(params.description?.trim()
@@ -438,6 +530,17 @@ const CreateRecordSchema = Type.Object({
     description:
       "Field values keyed by field name. Format by type: Text='string', Number=123, SingleSelect='Option', MultiSelect=['A','B'], DateTime=timestamp_ms, User=[{id:'ou_xxx'}], URL={text:'Display',link:'https://...'}",
   }),
+});
+
+const CreateAppSchema = Type.Object({
+  name: Type.String({
+    description: "Name for the new Bitable application",
+  }),
+  folder_token: Type.Optional(
+    Type.String({
+      description: "Optional folder token to place the Bitable in a specific folder",
+    }),
+  ),
 });
 
 const UpdateRecordSchema = Type.Object({
@@ -717,5 +820,28 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     { name: "feishu_bitable_update_record" },
   );
 
-  api.logger.info?.(`feishu_bitable: Registered 8 bitable tools`);
+  // Tool 8: feishu_bitable_create_app
+  api.registerTool(
+    {
+      name: "feishu_bitable_create_app",
+      label: "Feishu Bitable Create App",
+      description: "Create a new Bitable (multidimensional table) application",
+      parameters: CreateAppSchema,
+      async execute(_toolCallId, params) {
+        const { name, folder_token } = params as { name: string; folder_token?: string };
+        try {
+          const result = await createApp(getClient(), name, folder_token, {
+            debug: (msg) => api.logger.debug?.(msg),
+            warn: (msg) => api.logger.warn?.(msg),
+          });
+          return json(result);
+        } catch (err) {
+          return json({ error: err instanceof Error ? err.message : String(err) });
+        }
+      },
+    },
+    { name: "feishu_bitable_create_app" },
+  );
+
+  api.logger.info?.(`feishu_bitable: Registered 9 bitable tools`);
 }
