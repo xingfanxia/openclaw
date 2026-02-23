@@ -66,7 +66,10 @@ function normalizeSessionEntryDelivery(entry: SessionEntry): SessionEntry {
     lastChannel: entry.lastChannel,
     lastTo: entry.lastTo,
     lastAccountId: entry.lastAccountId,
-    lastThreadId: entry.lastThreadId ?? entry.deliveryContext?.threadId ?? entry.origin?.threadId,
+    // Do NOT fall back to origin.threadId — origin is metadata tracking,
+    // not delivery routing.  Using it here resurrects stale DM thread IDs
+    // that were intentionally cleared by updateLastRoute (#8891).
+    lastThreadId: entry.lastThreadId ?? entry.deliveryContext?.threadId,
     deliveryContext: entry.deliveryContext,
   });
   const nextDelivery = normalized.deliveryContext;

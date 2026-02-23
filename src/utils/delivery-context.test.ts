@@ -75,6 +75,8 @@ describe("delivery context helpers", () => {
       threadId: "999",
     });
 
+    // origin.threadId is metadata tracking, NOT delivery routing.
+    // It must NOT be promoted to deliveryContext.threadId (#8891).
     expect(
       deliveryContextFromSession({
         channel: "telegram",
@@ -85,7 +87,6 @@ describe("delivery context helpers", () => {
       channel: "telegram",
       to: "-1001",
       accountId: undefined,
-      threadId: 42,
     });
 
     expect(
