@@ -66,7 +66,7 @@ describe("buildTelegramMessageContext DM topic threadId in deliveryContext (#889
     recordInboundSessionMock.mockClear();
   });
 
-  it("passes threadId to updateLastRoute for DM topics", async () => {
+  it("does NOT persist threadId to main session updateLastRoute for DM topics", async () => {
     const ctx = await buildCtx({
       message: {
         chat: { id: 1234, type: "private" },
@@ -77,10 +77,13 @@ describe("buildTelegramMessageContext DM topic threadId in deliveryContext (#889
     expect(ctx).not.toBeNull();
     expect(recordInboundSessionMock).toHaveBeenCalled();
 
-    // Check that updateLastRoute includes threadId
+    // DM threadId must NOT be persisted to the main session delivery route.
+    // Persisting it causes heartbeat/proactive sends to include a stale
+    // message_thread_id that fails with "thread not found".
+    // Thread-specific sessions handle thread routing via resolveThreadSessionKeys.
     const updateLastRoute = getUpdateLastRoute() as { threadId?: string } | undefined;
     expect(updateLastRoute).toBeDefined();
-    expect(updateLastRoute?.threadId).toBe("42");
+    expect(updateLastRoute?.threadId).toBeUndefined();
   });
 
   it("does not pass threadId for regular DM without topic", async () => {

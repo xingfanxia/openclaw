@@ -684,8 +684,11 @@ export const buildTelegramMessageContext = async ({
           channel: "telegram",
           to: String(chatId),
           accountId: route.accountId,
-          // Preserve DM topic threadId for replies (fixes #8891)
-          threadId: dmThreadId != null ? String(dmThreadId) : undefined,
+          // Do NOT persist DM threadId to the main session delivery route.
+          // Persisting it causes heartbeat and proactive sends to include a
+          // stale message_thread_id, which fails with "thread not found" once
+          // the thread becomes inactive.  Thread-specific sessions already
+          // handle thread routing via resolveThreadSessionKeys above.
         }
       : undefined,
     onRecordError: (err) => {
