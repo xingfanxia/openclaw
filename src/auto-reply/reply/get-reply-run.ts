@@ -92,7 +92,6 @@ type RunPreparedReplyParams = {
   };
   typing: TypingController;
   opts?: GetReplyOptions;
-  defaultProvider: string;
   defaultModel: string;
   timeoutMs: number;
   isNewSession: boolean;
@@ -136,7 +135,6 @@ export async function runPreparedReply(
     perMessageQueueOptions,
     typing,
     opts,
-    defaultProvider,
     defaultModel,
     timeoutMs,
     isNewSession,
@@ -324,7 +322,6 @@ export async function runPreparedReply(
     const to = ctx.OriginatingTo || command.from || command.to;
     if (channel && to) {
       const modelLabel = `${provider}/${model}`;
-      const defaultLabel = `${defaultProvider}/${defaultModel}`;
       const modelAuthLabel = resolveModelAuthLabel({
         provider,
         cfg,
@@ -333,10 +330,7 @@ export async function runPreparedReply(
       });
       const authSuffix =
         modelAuthLabel && modelAuthLabel !== "unknown" ? ` · 🔑 ${modelAuthLabel}` : "";
-      const text =
-        modelLabel === defaultLabel
-          ? `✅ New session started · model: ${modelLabel}${authSuffix}`
-          : `✅ New session started · model: ${modelLabel} (default: ${defaultLabel})${authSuffix}`;
+      const text = `✅ New session started · model: ${modelLabel}${authSuffix}`;
       await routeReply({
         payload: { text },
         channel,

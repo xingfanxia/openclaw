@@ -355,7 +355,6 @@ export async function getReplyFromConfig(
     perMessageQueueOptions,
     typing,
     opts: resolvedOpts,
-    defaultProvider,
     defaultModel,
     timeoutMs,
     isNewSession,

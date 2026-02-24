@@ -131,8 +131,11 @@ export async function getStatusSummary(
         const age = updatedAt ? now - updatedAt : null;
         const resolvedModel = resolveSessionModelRef(cfg, entry, opts.agentIdOverride);
         const model = resolvedModel.model ?? configModel ?? null;
+        // Prefer a fresh model-based lookup over the stored value, which may be
+        // stale (e.g. set to the default model's window before the channel
+        // override model was resolved for the first time).
         const contextTokens =
-          entry?.contextTokens ?? lookupContextTokens(model) ?? configContextTokens ?? null;
+          lookupContextTokens(model) ?? entry?.contextTokens ?? configContextTokens ?? null;
         const total = resolveFreshSessionTotalTokens(entry);
         const totalTokensFresh =
           typeof entry?.totalTokens === "number" ? entry?.totalTokensFresh !== false : false;
