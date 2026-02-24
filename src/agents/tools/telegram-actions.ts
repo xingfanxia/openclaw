@@ -1,13 +1,12 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import type { OpenClawConfig } from "../../config/config.js";
-import { createTelegramActionGate } from "../../telegram/accounts.js";
-import type { TelegramButtonStyle, TelegramInlineButtons } from "../../telegram/button-types.js";
 import {
   chunkMarkdownTextWithMode,
   resolveChunkMode,
   resolveTextChunkLimit,
 } from "../../auto-reply/chunk.js";
-import { TELEGRAM_MAX_CAPTION_LENGTH } from "../../telegram/caption.js";
+import type { OpenClawConfig } from "../../config/config.js";
+import { createTelegramActionGate } from "../../telegram/accounts.js";
+import type { TelegramButtonStyle, TelegramInlineButtons } from "../../telegram/button-types.js";
 import {
   resolveTelegramInlineButtonsScope,
   resolveTelegramTargetChatType,
@@ -241,12 +240,11 @@ export async function handleTelegramAction(
       silent: typeof params.silent === "boolean" ? params.silent : undefined,
     };
     // Chunking:
-    // - Respect per-channel config (`channels.telegram.chunkMode` + `textChunkLimit`) so agents can
-    //   intentionally send multi-bubble messages (e.g. paragraph-separated) for more natural chat.
+    // - Respect per-channel config (`channels.telegram.chunkMode` + `textChunkLimit`) for text-only sends.
     // - Always cap at ~Telegram hard limit (4096) with a conservative 4000 to avoid rendering drift.
-    // - For media messages, we still chunk text. The first chunk may be sent as a caption, and the rest
-    //   as follow-up text-only bubbles. If the first chunk is too long for a caption, we send media
-    //   without a caption, then send all chunks as text bubbles (prevents Telegram auto-splitting).
+    // - For media sends, force length-based chunking to avoid newline-driven multi-bubble spam.
+    //   This keeps selfie/photo sends to a single image bubble in normal cases, while still allowing
+    //   overflow protection for very long text.
     const hardLimit = 4000;
     const limit = Math.min(
       resolveTextChunkLimit(cfg, "telegram", accountId ?? undefined, { fallbackLimit: hardLimit }),
@@ -255,17 +253,17 @@ export async function handleTelegramAction(
     const mode = resolveChunkMode(cfg, "telegram", accountId ?? undefined);
     const chunks = content ? chunkMarkdownTextWithMode(content, limit, mode) : [];
     const planned: Array<{ text: string; opts: typeof sendOpts }> = [];
-    const trimmedFirstChunk = chunks[0]?.trim() ?? "";
 
     if (mediaUrl) {
-      if (!chunks.length) {
+      const mediaChunks = content ? chunkMarkdownTextWithMode(content, limit, "length") : [];
+      if (!mediaChunks.length) {
         // Media-only message.
         planned.push({ text: "", opts: sendOpts });
-      } else if (trimmedFirstChunk && trimmedFirstChunk.length <= TELEGRAM_MAX_CAPTION_LENGTH) {
-        planned.push({ text: chunks[0] ?? "", opts: sendOpts });
-        for (let i = 1; i < chunks.length; i += 1) {
+      } else {
+        planned.push({ text: mediaChunks[0] ?? "", opts: sendOpts });
+        for (let i = 1; i < mediaChunks.length; i += 1) {
           planned.push({
-            text: chunks[i] ?? "",
+            text: mediaChunks[i] ?? "",
             opts: {
               ...sendOpts,
               mediaUrl: undefined,
@@ -273,36 +271,6 @@ export async function handleTelegramAction(
               replyToMessageId: undefined,
               quoteText: undefined,
             },
-          });
-        }
-      } else {
-        // First chunk would exceed Telegram caption limits. Send media without caption, then
-        // send all chunks as text-only messages so we control pacing/delays.
-        planned.push({
-          text: "",
-          opts: {
-            ...sendOpts,
-            buttons: undefined,
-          },
-        });
-        for (let i = 0; i < chunks.length; i += 1) {
-          planned.push({
-            text: chunks[i] ?? "",
-            opts:
-              i === 0
-                ? {
-                    ...sendOpts,
-                    mediaUrl: undefined,
-                    replyToMessageId: undefined,
-                    quoteText: undefined,
-                  }
-                : {
-                    ...sendOpts,
-                    mediaUrl: undefined,
-                    buttons: undefined,
-                    replyToMessageId: undefined,
-                    quoteText: undefined,
-                  },
           });
         }
       }

@@ -313,6 +313,65 @@ describe("handleTelegramAction", () => {
     );
   });
 
+  it("splits sendMessage into multiple bubbles when chunkMode is newline", async () => {
+    const cfg = {
+      channels: { telegram: { botToken: "tok", chunkMode: "newline", textChunkLimit: 1400 } },
+    } as OpenClawConfig;
+
+    await handleTelegramAction(
+      {
+        action: "sendMessage",
+        to: "123456",
+        content: "第一段\n\n第二段\n\n第三段",
+      },
+      cfg,
+    );
+
+    expect(sendMessageTelegram).toHaveBeenCalledTimes(3);
+    expect(sendMessageTelegram).toHaveBeenNthCalledWith(
+      1,
+      "123456",
+      "第一段",
+      expect.objectContaining({ token: "tok" }),
+    );
+    expect(sendMessageTelegram).toHaveBeenNthCalledWith(
+      2,
+      "123456",
+      "第二段",
+      expect.objectContaining({ token: "tok", replyToMessageId: undefined, quoteText: undefined }),
+    );
+    expect(sendMessageTelegram).toHaveBeenNthCalledWith(
+      3,
+      "123456",
+      "第三段",
+      expect.objectContaining({ token: "tok", replyToMessageId: undefined, quoteText: undefined }),
+    );
+  });
+
+  it("does not split media sends by newline when chunkMode is newline", async () => {
+    const cfg = {
+      channels: { telegram: { botToken: "tok", chunkMode: "newline", textChunkLimit: 1400 } },
+    } as OpenClawConfig;
+
+    await handleTelegramAction(
+      {
+        action: "sendMessage",
+        to: "123456",
+        content: "第一段\n\n第二段\n\n第三段",
+        mediaUrl: "https://example.com/image.jpg",
+      },
+      cfg,
+    );
+
+    expect(sendMessageTelegram).toHaveBeenCalledTimes(1);
+    expect(sendMessageTelegram).toHaveBeenNthCalledWith(
+      1,
+      "123456",
+      "第一段\n\n第二段\n\n第三段",
+      expect.objectContaining({ token: "tok", mediaUrl: "https://example.com/image.jpg" }),
+    );
+  });
+
   it("requires content when no mediaUrl is provided", async () => {
     await expect(
       handleTelegramAction(
