@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
-import type { OAuthConfig, AccountConfig } from "../types.js";
 import { createEvent } from "../calendar-client.js";
+import type { OAuthConfig, AccountConfig } from "../types.js";
 import {
   accountNotFoundResult,
   errorResult,
@@ -19,7 +19,7 @@ export function createCalendarCreateTool(
 ): AnyAgentTool {
   return {
     name: "calendar_create",
-    description: `Create a calendar event. Supports timed events, all-day events, attendees, recurrence, and Google Meet links. Default account: ${defaultAccount} (work=x@computelabs.ai, personal=xingfanxia@gmail.com).`,
+    description: `Create a calendar event. Supports timed events, all-day events, attendees, recurrence, and Google Meet links. Default account: ${defaultAccount}.`,
     parameters: Type.Object({
       summary: Type.String({
         description: "Event title/summary",

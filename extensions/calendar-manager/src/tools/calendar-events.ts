@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
-import type { OAuthConfig, AccountConfig } from "../types.js";
 import { listEvents } from "../calendar-client.js";
+import type { OAuthConfig, AccountConfig } from "../types.js";
 import {
   accountNotFoundResult,
   errorResult,
@@ -19,7 +19,7 @@ export function createCalendarEventsTool(
 ): AnyAgentTool {
   return {
     name: "calendar_events",
-    description: `Search or list calendar events. Supports time range filtering and text search. Default account: ${defaultAccount} (work=x@computelabs.ai, personal=xingfanxia@gmail.com).`,
+    description: `Search or list calendar events. Supports time range filtering and text search. Default account: ${defaultAccount}.`,
     parameters: Type.Object({
       account_id: Type.Optional(
         Type.String({

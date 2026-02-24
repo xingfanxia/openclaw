@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
-import type { OAuthConfig, AccountConfig } from "../types.js";
 import { quickAddEvent } from "../calendar-client.js";
+import type { OAuthConfig, AccountConfig } from "../types.js";
 import {
   accountNotFoundResult,
   errorResult,
@@ -18,7 +18,7 @@ export function createCalendarQuickAddTool(
 ): AnyAgentTool {
   return {
     name: "calendar_quick_add",
-    description: `Create an event using natural language. Google parses the text for date, time, and title. Default account: ${defaultAccount} (work=x@computelabs.ai, personal=xingfanxia@gmail.com). Examples: 'Lunch tomorrow at noon', 'Dentist next Tuesday at 2pm'.`,
+    description: `Create an event using natural language. Google parses the text for date, time, and title. Default account: ${defaultAccount}. Examples: 'Lunch tomorrow at noon', 'Dentist next Tuesday at 2pm'.`,
     parameters: Type.Object({
       text: Type.String({
         description: "Natural language event description",

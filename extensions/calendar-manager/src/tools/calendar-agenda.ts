@@ -1,8 +1,8 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
+import { listEvents } from "../calendar-client.js";
 import type { OAuthConfig, AccountConfig } from "../types.js";
 import type { CalendarEvent } from "../types.js";
-import { listEvents } from "../calendar-client.js";
 import {
   accountNotFoundResult,
   errorResult,
@@ -72,7 +72,7 @@ export function createCalendarAgendaTool(
 ): AnyAgentTool {
   return {
     name: "calendar_agenda",
-    description: `Get a day or multi-day agenda summary grouped by date. Default account: ${defaultAccount} (work=x@computelabs.ai, personal=xingfanxia@gmail.com). Great for "What's on my calendar today?" or "Show my week ahead".`,
+    description: `Get a day or multi-day agenda summary grouped by date. Default account: ${defaultAccount}. Use for "What's on my calendar today?" or "Show my week ahead".`,
     parameters: Type.Object({
       account_id: Type.Optional(
         Type.String({ description: `Account ID or alias (default: ${defaultAccount})` }),
@@ -109,7 +109,7 @@ export function createCalendarAgendaTool(
           calendarId: params.calendar_id,
           timeMin: startOfDay.toISOString(),
           timeMax: endOfRange.toISOString(),
-          maxResults: 100,
+          maxResults: 25,
         });
 
         const grouped = groupByDate(events, defaultTimezone);
