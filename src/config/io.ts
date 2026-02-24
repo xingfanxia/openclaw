@@ -1144,20 +1144,11 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
 
       try {
         await deps.fs.promises.rename(tmp, configPath);
-        // After rename the new inode is owned by us — chmod succeeds.
-        // This ensures the container (different uid) can read the file even in
-        // shared host/container setups where ACL mask may be restrictive.
-        await deps.fs.promises.chmod(configPath, 0o644).catch(() => {
-          // best-effort
-        });
       } catch (err) {
         const code = (err as { code?: string }).code;
         // Windows doesn't reliably support atomic replace via rename when dest exists.
         if (code === "EPERM" || code === "EEXIST") {
           await deps.fs.promises.copyFile(tmp, configPath);
-          await deps.fs.promises.chmod(configPath, 0o644).catch(() => {
-            // best-effort
-          });
           await deps.fs.promises.unlink(tmp).catch(() => {
             // best-effort
           });
