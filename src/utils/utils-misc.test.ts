@@ -58,6 +58,11 @@ describe("isReasoningTagProvider", () => {
       value: "Ollama",
       expected: false,
     },
+    {
+      name: "returns true for google (plain provider used in openclaw config)",
+      value: "google",
+      expected: true,
+    },
     { name: "returns true for google-gemini-cli", value: "google-gemini-cli", expected: true },
     {
       name: "returns true for google-generative-ai",

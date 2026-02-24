@@ -18,7 +18,15 @@ export function isReasoningTagProvider(provider: string | undefined | null): boo
   // handles reasoning natively via the `reasoning` field in streaming chunks,
   // so tag-based enforcement is unnecessary and causes all output to be
   // discarded as "(no output)" (#2279).
-  if (normalized === "google-gemini-cli" || normalized === "google-generative-ai") {
+  // Handle all Google provider variants: "google", "google-gemini-cli", "google-generative-ai",
+  // "google-antigravity", etc. The plain "google" provider is used by openclaw config
+  // (e.g. google/gemini-3-pro-preview) and must be included to enforce <think>/<final> tags
+  // so inline reasoning prose is not leaked to users as plain text.
+  if (
+    normalized === "google" ||
+    normalized === "google-gemini-cli" ||
+    normalized === "google-generative-ai"
+  ) {
     return true;
   }
 
