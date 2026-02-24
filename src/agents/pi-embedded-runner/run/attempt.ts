@@ -108,6 +108,7 @@ import {
   createSystemPromptOverride,
 } from "../system-prompt.js";
 import { dropThinkingBlocks } from "../thinking.js";
+import { injectTimeContext } from "../time-context.js";
 import { collectAllowedToolNames } from "../tool-name-allowlist.js";
 import { installToolResultContextGuard } from "../tool-result-context-guard.js";
 import { splitSdkTools } from "../tool-split.js";
@@ -841,9 +842,12 @@ export async function runEmbeddedAttempt(
         const limited = transcriptPolicy.repairToolUseResultPairing
           ? sanitizeToolUseResultPairing(stripped)
           : stripped;
-        cacheTrace?.recordStage("session:limited", { messages: limited });
-        if (limited.length > 0) {
-          activeSession.agent.replaceMessages(limited);
+        // Annotate user messages with elapsed-time context so the model
+        // can reason about time without doing arithmetic.
+        const timed = injectTimeContext(limited, Date.now(), userTimezone);
+        cacheTrace?.recordStage("session:limited", { messages: timed });
+        if (timed.length > 0) {
+          activeSession.agent.replaceMessages(timed);
         }
       } catch (err) {
         await flushPendingToolResultsAfterIdle({
