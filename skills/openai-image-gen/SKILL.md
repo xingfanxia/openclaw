@@ -27,6 +27,8 @@ metadata:
 
 Generate a handful of “random but structured” prompts and render them via the OpenAI Images API.
 
+> **⚠️ NOT for selfies.** If you need to generate a selfie or personal photo, use the `image_generate` tool instead — it has face reference photos for identity consistency. This `gen.py` script is for generic batch image generation only and has no access to face references.
+
 ## Run
 
 ```bash
