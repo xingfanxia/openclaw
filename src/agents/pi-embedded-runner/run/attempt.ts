@@ -86,7 +86,12 @@ import {
   sanitizeSessionHistory,
   sanitizeToolsForGoogle,
 } from "../google.js";
-import { getDmHistoryLimitFromSessionKey, limitHistoryTurns } from "../history.js";
+import {
+  getDmHistoryLimitFromSessionKey,
+  getDmStripToolHistoryFromSessionKey,
+  limitHistoryTurns,
+  stripToolHistoryFromMessages,
+} from "../history.js";
 import { log } from "../logger.js";
 import { buildModelAliasLines } from "../model.js";
 import {
@@ -825,12 +830,17 @@ export async function runEmbeddedAttempt(
           validated,
           getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
         );
+        // Strip tool calls/results/thinking from DM history when configured,
+        // reducing token usage by keeping only chat text.
+        const stripped = getDmStripToolHistoryFromSessionKey(params.sessionKey, params.config)
+          ? stripToolHistoryFromMessages(truncated)
+          : truncated;
         // Re-run tool_use/tool_result pairing repair after truncation, since
         // limitHistoryTurns can orphan tool_result blocks by removing the
         // assistant message that contained the matching tool_use.
         const limited = transcriptPolicy.repairToolUseResultPairing
-          ? sanitizeToolUseResultPairing(truncated)
-          : truncated;
+          ? sanitizeToolUseResultPairing(stripped)
+          : stripped;
         cacheTrace?.recordStage("session:limited", { messages: limited });
         if (limited.length > 0) {
           activeSession.agent.replaceMessages(limited);

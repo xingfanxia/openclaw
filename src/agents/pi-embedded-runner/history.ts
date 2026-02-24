@@ -113,3 +113,105 @@ export function getHistoryLimitFromSessionKey(
  * Alias for backward compatibility.
  */
 export const getDmHistoryLimitFromSessionKey = getHistoryLimitFromSessionKey;
+
+type AssistantContentBlock = Extract<AgentMessage, { role: "assistant" }>["content"][number];
+
+/**
+ * Check whether dmStripToolHistory is enabled for the given session key.
+ * Only applies to DM sessions (kind === "dm" or "direct").
+ */
+export function getDmStripToolHistoryFromSessionKey(
+  sessionKey: string | undefined,
+  config: OpenClawConfig | undefined,
+): boolean {
+  if (!sessionKey || !config) {
+    return false;
+  }
+
+  const parts = sessionKey.split(":").filter(Boolean);
+  const providerParts = parts.length >= 3 && parts[0] === "agent" ? parts.slice(2) : parts;
+
+  const provider = providerParts[0]?.toLowerCase();
+  if (!provider) {
+    return false;
+  }
+
+  const kind = providerParts[1]?.toLowerCase();
+  if (kind !== "dm" && kind !== "direct") {
+    return false;
+  }
+
+  const channels = config?.channels;
+  if (!channels || typeof channels !== "object") {
+    return false;
+  }
+  const entry = (channels as Record<string, unknown>)[provider];
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return false;
+  }
+  return Boolean((entry as { dmStripToolHistory?: boolean }).dmStripToolHistory);
+}
+
+/**
+ * Strip tool history from messages to reduce token usage in DM sessions.
+ *
+ * Removes:
+ * - All `role: "toolResult"` messages
+ * - `toolCall` blocks from assistant message content
+ * - `thinking` blocks from assistant message content
+ *
+ * Keeps:
+ * - User messages (unchanged)
+ * - `text` blocks in assistant messages
+ *
+ * When an assistant message has all content stripped, a synthetic
+ * `{ type: "text", text: "" }` block is inserted to preserve turn structure.
+ *
+ * Returns the original array reference when nothing was changed.
+ */
+export function stripToolHistoryFromMessages(messages: AgentMessage[]): AgentMessage[] {
+  let touched = false;
+  const out: AgentMessage[] = [];
+
+  for (const msg of messages) {
+    // Drop toolResult messages entirely.
+    if (msg.role === "toolResult") {
+      touched = true;
+      continue;
+    }
+
+    // Only process assistant messages with content arrays.
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) {
+      out.push(msg);
+      continue;
+    }
+
+    const nextContent: AssistantContentBlock[] = [];
+    let changed = false;
+    for (const block of msg.content) {
+      if (!block || typeof block !== "object") {
+        nextContent.push(block);
+        continue;
+      }
+      const blockType = (block as { type?: unknown }).type;
+      if (blockType === "toolCall" || blockType === "thinking") {
+        touched = true;
+        changed = true;
+        continue;
+      }
+      nextContent.push(block);
+    }
+
+    if (!changed) {
+      out.push(msg);
+      continue;
+    }
+
+    // Preserve the assistant turn even if all blocks were stripped.
+    const content =
+      nextContent.length > 0 ? nextContent : [{ type: "text", text: "" } as AssistantContentBlock];
+    out.push({ ...msg, content });
+  }
+
+  return touched ? out : messages;
+}
