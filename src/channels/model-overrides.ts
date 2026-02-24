@@ -115,9 +115,8 @@ export function resolveChannelModelOverride(
   }
 
   const candidates = buildChannelCandidates(params);
-  if (candidates.length === 0) {
-    return null;
-  }
+  // Don't bail on empty candidates — the wildcard "*" entry should still match
+  // DMs and other contexts that have no groupId/groupChannel/groupSubject.
   const match = resolveChannelEntryMatchWithFallback({
     entries: providerEntries,
     keys: candidates,
