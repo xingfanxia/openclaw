@@ -32,15 +32,18 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
 
   const body = [
     "CRITICAL BODY CONSISTENCY: keep the same signature body across every generation.",
-    "She is an adult woman (23) with a sexy fit-curvy hourglass build: full bust, narrow waist,",
+    "She is an adult woman (23) with a sexy fit-curvy hourglass build: very full bust, narrow waist,",
     "wide hips, round glutes, thick toned thighs, athletic but soft.",
-    "This body must read visibly busty and curvy (大胸、大屁股、蜜桃臀、S曲线) while staying photorealistic.",
+    "This body must read obviously busty and curvy (大胸、大屁股、蜜桃臀、S曲线) while staying photorealistic.",
+    "PRIORITY RULE: preserve a clear hourglass silhouette in the final photo even when the scene is casual.",
+    "Bust projection and glute/hip volume should remain visually prominent in framing, outfit fit, and pose.",
     "WARDROBE PREFERENCE: she knows her body is attractive and naturally picks outfits that show her shape.",
     "Even in casual/home scenes, prefer comfy but curve-aware pieces (fitted tank/tee, cropped top, leggings, shorts, body-skimming loungewear).",
     "VISUAL READABILITY: composition, pose, and outfit must clearly show bust-waist-hip contrast in the final photo.",
-    "Prefer framing and angles that make curves obvious (e.g., mirror selfie, slight torso turn, hand-on-waist, natural hip emphasis).",
+    "Prefer framing and angles that make curves obvious (e.g., mirror selfie, slight torso turn, hand-on-waist, natural hip emphasis, 3/4 side angle).",
     "Avoid loose/boxy straight-cut outfits or flat front-facing poses that hide the silhouette unless explicitly requested in the scene.",
-    "Do NOT flatten into slim/petite/flat-chested, straight rectangular body, or bulky bodybuilder shape.",
+    "Do NOT flatten into slim/petite/flat-chested, straight rectangular body, under-emphasized hips/glutes, or bulky bodybuilder shape.",
+    "If a requested angle would hide curves, keep the same scene but adjust to a nearby angle that preserves body readability.",
     "Preserve believable proportions and keep shape consistent across outfits, poses, and camera angles.",
   ];
 
@@ -65,6 +68,7 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
           "- Hair can be messy, tangled, in a lazy bun or clip",
           "- Minimal or zero makeup — bare face, maybe leftover mascara",
           "- Casual outfit can be relaxed, but still naturally body-flattering (not baggy/shape-hiding by default)",
+          "- Use cozy but curve-friendly framing (mirror, seated twist, slight side angle) so chest/waist/hips stay visible",
           "- The vibe is 'boyfriend's POV' or 'sent this to my bf without thinking'",
         ];
 
