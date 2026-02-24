@@ -1,8 +1,8 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
-import type { OAuthConfig } from "../oauth2.js";
 import { classifyEmails } from "../email-classifier.js";
 import { searchEmails } from "../gmail-client.js";
+import type { OAuthConfig } from "../oauth2.js";
 
 interface AccountConfig {
   id: string;
@@ -59,16 +59,11 @@ export function createGmailSearchTool(
       }
 
       const allResults: Record<string, unknown> = {};
-      let totalFound = 0;
-
       for (const account of targetAccounts) {
         try {
           const emails = await searchEmails(oauthConfig, account.id, params.query, maxResults);
           const classified = classifyEmails(emails);
-          totalFound += emails.length;
           allResults[account.id] = {
-            email: account.email,
-            resultCount: emails.length,
             results: classified.map((e) => ({
               id: e.id,
               subject: e.subject,
@@ -81,18 +76,11 @@ export function createGmailSearchTool(
           };
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
-          allResults[account.id] = {
-            email: account.email,
-            error: message,
-          };
+          allResults[account.id] = { error: message };
         }
       }
 
-      const result = {
-        query: params.query,
-        totalFound,
-        accounts: allResults,
-      };
+      const result = { accounts: allResults };
 
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],

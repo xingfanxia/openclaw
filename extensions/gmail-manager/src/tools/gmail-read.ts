@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
-import type { OAuthConfig } from "../oauth2.js";
 import { readEmail } from "../gmail-client.js";
+import type { OAuthConfig } from "../oauth2.js";
 
 interface AccountConfig {
   id: string;
@@ -41,7 +41,6 @@ export function createGmailReadTool(
       try {
         const email = await readEmail(oauthConfig, params.account_id, params.message_id);
         const result = {
-          account: params.account_id,
           id: email.id,
           threadId: email.threadId,
           from: email.from,
@@ -51,7 +50,6 @@ export function createGmailReadTool(
           date: email.date,
           labels: email.labels,
           body: email.body || "(no plain text body)",
-          hasHtml: email.bodyHtml ? true : false,
           attachments: email.attachments.length > 0 ? email.attachments : undefined,
         };
         return {
