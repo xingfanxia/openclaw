@@ -417,9 +417,9 @@ export function buildStatusMessage(args: StatusArgs): string {
   let activeProvider = modelRefs.active.provider;
   let activeModel = modelRefs.active.model;
   let contextTokens =
+    lookupContextTokens(activeModel) ??
     entry?.contextTokens ??
     args.agent?.contextTokens ??
-    lookupContextTokens(activeModel) ??
     DEFAULT_CONTEXT_TOKENS;
 
   let inputTokens = entry?.inputTokens;
