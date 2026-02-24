@@ -101,6 +101,11 @@ const loadPromise = (async () => {
   // Keep lookup best-effort.
 });
 
+/** Resolves when the model context window cache is fully populated. */
+export async function ensureContextWindowsLoaded(): Promise<void> {
+  await loadPromise;
+}
+
 export function lookupContextTokens(modelId?: string): number | undefined {
   if (!modelId) {
     return undefined;
