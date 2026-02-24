@@ -60,7 +60,9 @@ RUN pnpm ui:build
 
 ENV NODE_ENV=production
 
-# Install Claude Code CLI (needed by claude-code plugin Agent SDK)
+# Switch to root for system-level installs
+USER root
+
 # Install coding agent CLIs (needed by plugin SDKs)
 # GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -81,7 +83,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && chmod a+rx /usr/local/bin/yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-agent-sdk @openai/codex @openai/codex-sdk vercel
+RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-agent-sdk @openai/codex @openai/codex-sdk vercel \
+    && ln -sf /app/dist/entry.js /usr/local/bin/openclaw
 # Symlink globally-installed SDKs into /app/node_modules so bundled extension code can resolve them
 # (NODE_PATH works for CJS require() but NOT for ESM import(), symlinks work for both)
 RUN ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk /app/node_modules/@anthropic-ai/claude-agent-sdk \
