@@ -261,6 +261,7 @@ function createRuntimeConfig(): PluginRuntime["config"] {
 function createRuntimeSystem(): PluginRuntime["system"] {
   return {
     enqueueSystemEvent,
+    requestHeartbeatNow,
     runCommandWithTimeout,
     formatNativeDependencyHint,
   };
@@ -298,12 +299,6 @@ function createRuntimeChannel(): PluginRuntime["channel"] {
       hasControlCommand,
       resolveMarkdownTableMode,
       convertMarkdownTables,
-    },
-    system: {
-      enqueueSystemEvent,
-      requestHeartbeatNow,
-      runCommandWithTimeout,
-      formatNativeDependencyHint,
     },
     reply: {
       dispatchReplyWithBufferedBlockDispatcher,
