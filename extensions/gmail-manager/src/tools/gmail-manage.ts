@@ -1,5 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
+import type { OAuthConfig } from "../oauth2.js";
 import {
   modifyMessage,
   batchModifyMessages,
@@ -7,7 +8,6 @@ import {
   findOrCreateLabel,
   searchEmails,
 } from "../gmail-client.js";
-import type { OAuthConfig } from "../oauth2.js";
 
 interface AccountConfig {
   id: string;
@@ -97,10 +97,12 @@ export function createGmailManageTool(
       try {
         // Resolve message IDs from query if needed
         let messageIds = params.message_ids ?? [];
+        let queryMatched = 0;
 
         if (params.query && !messageIds.length) {
           const emails = await searchEmails(oauthConfig, params.account_id, params.query, 100);
           messageIds = emails.map((e) => e.id);
+          queryMatched = messageIds.length;
 
           if (messageIds.length === 0) {
             const result = {
@@ -122,7 +124,10 @@ export function createGmailManageTool(
             await trashMessage(oauthConfig, params.account_id, id);
           }
           const result = {
+            success: true,
+            account: params.account_id,
             trashed: messageIds.length,
+            query: params.query ?? undefined,
           };
           return {
             content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
@@ -174,8 +179,23 @@ export function createGmailManageTool(
           );
         }
 
+        const actions: string[] = [];
+        if (params.mark_read) actions.push("Marked as read");
+        if (params.mark_unread) actions.push("Marked as unread");
+        if (params.archive) actions.push("Archived");
+        if (params.star) actions.push("Starred");
+        if (params.unstar) actions.push("Unstarred");
+        if (params.label) actions.push(`Applied label "${params.label}"`);
+        if (params.important) actions.push("Marked important");
+        if (params.not_important) actions.push("Marked not important");
+
         const result = {
+          success: true,
+          account: params.account_id,
           messagesModified: messageIds.length,
+          query: params.query ?? undefined,
+          queryMatched: queryMatched > 0 ? queryMatched : undefined,
+          actions,
         };
         return {
           content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],

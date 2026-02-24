@@ -311,7 +311,17 @@ export default function register(api: OpenClawPluginApi) {
             content: [
               {
                 type: "text" as const,
-                text: `Image saved: ${filePath}`,
+                text: [
+                  `Image generated and saved to: ${filePath}`,
+                  `Size: ${(stats.size / 1024).toFixed(0)} KB`,
+                  `Model: ${MODEL}`,
+                  `Reference images: ${REFERENCE_FILENAMES.length} face refs used`,
+                  "",
+                  `Send it using the message tool:`,
+                  `  action: "send"`,
+                  `  media: "${filePath}"`,
+                  `  message: "your caption"`,
+                ].join("\n"),
               },
             ],
           };

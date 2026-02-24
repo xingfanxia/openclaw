@@ -1,8 +1,8 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
-import { classifyEmails } from "../email-classifier.js";
-import { listUnread } from "../gmail-client.js";
 import type { OAuthConfig } from "../oauth2.js";
+import { classifyEmails, generateDigest, formatDigestAsText } from "../email-classifier.js";
+import { listUnread } from "../gmail-client.js";
 
 interface AccountConfig {
   id: string;
@@ -56,6 +56,7 @@ export function createGmailCheckTool(
           const classified = classifyEmails(emails);
           allClassified.push(...classified);
           allResults[account.id] = {
+            email: account.email,
             unreadCount: emails.length,
             classified: classified.map((e) => ({
               subject: e.subject,
@@ -67,13 +68,31 @@ export function createGmailCheckTool(
           };
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
-          allResults[account.id] = { error: message };
+          allResults[account.id] = {
+            email: account.email,
+            error: message,
+          };
         }
       }
 
+      const digest = generateDigest(allClassified);
       const result = {
-        totalUnread: allClassified.length,
         accounts: allResults,
+        digest: formatDigestAsText(digest),
+        summary: {
+          totalUnread: allClassified.length,
+          byCategory: Object.fromEntries(
+            [
+              "important",
+              "actionable",
+              "newsletter",
+              "marketing",
+              "spam",
+              "social",
+              "transactional",
+            ].map((cat) => [cat, allClassified.filter((e) => e.category === cat).length]),
+          ),
+        },
       };
 
       return {

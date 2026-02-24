@@ -690,7 +690,7 @@ async function runTavilySearch(params: {
 
   if (!res.ok) {
     const detail = await readResponseText(res);
-    throw new Error(`Tavily API error (${res.status}): ${detail.text || res.statusText}`);
+    throw new Error(`Tavily API error (${res.status}): ${detail || res.statusText}`);
   }
 
   const data = (await res.json()) as TavilySearchResponse;
@@ -740,6 +740,8 @@ async function runWebSearch(params: {
     return { ...cached.value, cached: true };
   }
 
+  const start = Date.now();
+
   if (params.provider === "perplexity") {
     const { content, citations } = await runPerplexitySearch({
       query: params.query,
@@ -750,6 +752,10 @@ async function runWebSearch(params: {
     });
 
     const payload = {
+      query: params.query,
+      provider: params.provider,
+      model: params.perplexityModel ?? DEFAULT_PERPLEXITY_MODEL,
+      tookMs: Date.now() - start,
       content: wrapWebContent(content),
       citations,
     };
@@ -767,6 +773,10 @@ async function runWebSearch(params: {
     });
 
     const payload = {
+      query: params.query,
+      provider: params.provider,
+      model: params.grokModel ?? DEFAULT_GROK_MODEL,
+      tookMs: Date.now() - start,
       content: wrapWebContent(content),
       citations,
       inlineCitations,
@@ -787,7 +797,13 @@ async function runWebSearch(params: {
       country: resolveTavilyCountry(params.country),
     });
 
-    const payload: Record<string, unknown> = { results };
+    const payload: Record<string, unknown> = {
+      query: params.query,
+      provider: params.provider,
+      count: results.length,
+      tookMs: Date.now() - start,
+      results,
+    };
     if (answer) {
       payload.answer = wrapWebContent(answer);
     }
@@ -847,6 +863,10 @@ async function runWebSearch(params: {
   });
 
   const payload = {
+    query: params.query,
+    provider: params.provider,
+    count: mapped.length,
+    tookMs: Date.now() - start,
     results: mapped,
   };
   writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);

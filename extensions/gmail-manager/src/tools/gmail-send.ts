@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
-import { sendEmail } from "../gmail-client.js";
 import type { OAuthConfig } from "../oauth2.js";
+import { sendEmail } from "../gmail-client.js";
 
 interface AccountConfig {
   id: string;
@@ -80,6 +80,11 @@ export function createGmailSendTool(
         });
 
         const result = {
+          success: true,
+          account: params.account_id,
+          from: account.email,
+          to: params.to,
+          subject: params.subject,
           messageId: sendResult.messageId,
           threadId: sendResult.threadId,
         };
