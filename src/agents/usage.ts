@@ -80,8 +80,30 @@ export function normalizeUsage(raw?: UsageLike | null): NormalizedUsage | undefi
     return undefined;
   }
 
+  // Normalize Gemini-style usage where `input` = total prompt tokens (inclusive of cached)
+  // and `cacheRead` is a subset of `input`. Detected when total ≈ input + output (within 5%),
+  // meaning cached tokens are NOT added separately to total (unlike Anthropic convention).
+  // After normalization, `input` = non-cached tokens only, consistent with Anthropic convention.
+  let normalizedInput = input;
+  if (
+    input !== undefined &&
+    input > 0 &&
+    cacheRead !== undefined &&
+    cacheRead > 0 &&
+    cacheRead < input &&
+    total !== undefined &&
+    total > 0
+  ) {
+    const inputPlusOutput = input + (output ?? 0);
+    const diff = Math.abs(total - inputPlusOutput);
+    if (diff / total < 0.05) {
+      // total ≈ input + output → Gemini-style (input includes cached tokens)
+      normalizedInput = input - cacheRead;
+    }
+  }
+
   return {
-    input,
+    input: normalizedInput,
     output,
     cacheRead,
     cacheWrite,

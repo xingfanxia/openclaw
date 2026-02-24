@@ -34,6 +34,43 @@ describe("normalizeUsage", () => {
     });
   });
 
+  it("normalizes Gemini-style usage where input=total prompt (cached included)", () => {
+    // Gemini: promptTokenCount=329k (total), cachedContentTokenCount=318k (subset),
+    // totalTokenCount=331k (prompt + output). input should be normalized to non-cached only.
+    const usage = normalizeUsage({
+      input: 329_000,
+      output: 1_900,
+      cacheRead: 318_000,
+      cacheWrite: 0,
+      total: 330_900, // ≈ input + output (Gemini totalTokenCount)
+    });
+    expect(usage).toEqual({
+      input: 11_000, // 329k - 318k = non-cached only
+      output: 1_900,
+      cacheRead: 318_000,
+      cacheWrite: 0,
+      total: 330_900,
+    });
+  });
+
+  it("does not normalize Anthropic-style usage (total includes cacheRead)", () => {
+    // Anthropic: input=non-cached, total=input+cacheRead+cacheWrite+output
+    const usage = normalizeUsage({
+      input_tokens: 1200,
+      output_tokens: 340,
+      cache_read_input_tokens: 50,
+      cache_creation_input_tokens: 200,
+      total_tokens: 1790, // 1200+340+50+200 — NOT just input+output
+    });
+    expect(usage).toEqual({
+      input: 1200, // unchanged — total ≠ input+output so no normalization
+      output: 340,
+      cacheRead: 50,
+      cacheWrite: 200,
+      total: 1790,
+    });
+  });
+
   it("returns undefined for empty usage objects", () => {
     expect(normalizeUsage({})).toBeUndefined();
   });
