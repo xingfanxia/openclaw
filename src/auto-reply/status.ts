@@ -562,6 +562,8 @@ export function buildStatusMessage(args: StatusArgs): string {
           usage: {
             input: inputTokens ?? undefined,
             output: outputTokens ?? undefined,
+            cacheRead: cacheRead ?? undefined,
+            cacheWrite: cacheWrite ?? undefined,
           },
           cost: costConfig,
         })
