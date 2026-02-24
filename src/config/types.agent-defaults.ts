@@ -160,6 +160,8 @@ export type AgentDefaultsConfig = {
   compaction?: AgentCompactionConfig;
   /** Auto-compact when session exceeds this many messages (0 = disabled). */
   sessionMessageLimit?: number;
+  /** Fraction of context window at which proactive compaction triggers (0.1–0.95, default 0.8). */
+  proactiveCompactionRatio?: number;
   /** Reset session (discard transcript) after this many compactions (0 = disabled). */
   sessionMaxCompactions?: number;
   /** Vector memory search configuration (per-agent overrides supported). */

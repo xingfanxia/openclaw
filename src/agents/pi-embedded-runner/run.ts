@@ -1,6 +1,6 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { resolveDefaultSessionStorePath } from "../../config/sessions/paths.js";
 import { loadSessionStore, updateSessionStore } from "../../config/sessions/store.js";
@@ -567,7 +567,8 @@ export async function runEmbeddedPiAgent(
           runLoopIterations += 1;
 
           // --- Proactive compaction: compact before the context overflows ---
-          const PROACTIVE_COMPACTION_RATIO = 0.8;
+          const PROACTIVE_COMPACTION_RATIO =
+            params.config?.agents?.defaults?.proactiveCompactionRatio ?? 0.8;
           const sessionMessageLimit = params.config?.agents?.defaults?.sessionMessageLimit ?? 0;
 
           if (lastMessagesSnapshot && lastMessagesSnapshot.length > 2) {
@@ -649,7 +650,6 @@ export async function runEmbeddedPiAgent(
               });
             }
           }
-
 
           attemptedThinking.add(thinkLevel);
           await fs.mkdir(resolvedWorkspace, { recursive: true });

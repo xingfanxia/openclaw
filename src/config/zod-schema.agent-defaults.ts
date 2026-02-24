@@ -109,6 +109,7 @@ export const AgentDefaultsSchema = z
       .strict()
       .optional(),
     sessionMessageLimit: z.number().int().nonnegative().optional(),
+    proactiveCompactionRatio: z.number().min(0.1).max(0.95).optional(),
     sessionMaxCompactions: z.number().int().nonnegative().optional(),
     thinkingDefault: z
       .union([
