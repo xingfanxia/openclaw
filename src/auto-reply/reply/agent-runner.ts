@@ -521,12 +521,18 @@ export async function runReplyAgent(params: {
     const { replyPayloads } = payloadResult;
     didLogHeartbeatStrip = payloadResult.didLogHeartbeatStrip;
 
-    // Propagate messaging tool signal to callers (e.g. heartbeat runner) via mutable ref
-    if (
-      opts?.replyMetaRef &&
-      (runResult.didSendViaMessagingTool || (runResult.messagingToolSentTexts?.length ?? 0) > 0)
-    ) {
-      opts.replyMetaRef.didSendViaMessagingTool = true;
+    // Propagate delivery signals to callers (e.g. heartbeat runner) via mutable ref.
+    // Content can be delivered via messaging tool OR block streaming — both bypass replyPayloads.
+    if (opts?.replyMetaRef) {
+      if (
+        runResult.didSendViaMessagingTool ||
+        (runResult.messagingToolSentTexts?.length ?? 0) > 0
+      ) {
+        opts.replyMetaRef.didSendViaMessagingTool = true;
+      }
+      if (blockStreamingEnabled && blockReplyPipeline?.didStream()) {
+        opts.replyMetaRef.didStreamReply = true;
+      }
     }
 
     if (replyPayloads.length === 0) {

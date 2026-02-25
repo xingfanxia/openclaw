@@ -719,7 +719,7 @@ export async function runHeartbeatOnce(opts: {
 
     const heartbeatModelOverride = heartbeat?.model?.trim() || undefined;
     const suppressToolErrorWarnings = heartbeat?.suppressToolErrorWarnings === true;
-    const replyMetaRef: { didSendViaMessagingTool?: boolean } = {};
+    const replyMetaRef: { didSendViaMessagingTool?: boolean; didStreamReply?: boolean } = {};
     const replyOpts = heartbeatModelOverride
       ? { isHeartbeat: true, heartbeatModelOverride, suppressToolErrorWarnings, replyMetaRef }
       : { isHeartbeat: true, suppressToolErrorWarnings, replyMetaRef };
@@ -734,7 +734,7 @@ export async function runHeartbeatOnce(opts: {
       !replyPayload ||
       (!replyPayload.text && !replyPayload.mediaUrl && !replyPayload.mediaUrls?.length)
     ) {
-      if (!replyMetaRef.didSendViaMessagingTool) {
+      if (!replyMetaRef.didSendViaMessagingTool && !replyMetaRef.didStreamReply) {
         await restoreHeartbeatUpdatedAt({
           storePath,
           sessionKey,
@@ -772,7 +772,7 @@ export async function runHeartbeatOnce(opts: {
     }
     const shouldSkipMain = normalized.shouldSkip && !normalized.hasMedia && !hasExecCompletion;
     if (shouldSkipMain && reasoningPayloads.length === 0) {
-      if (!replyMetaRef.didSendViaMessagingTool) {
+      if (!replyMetaRef.didSendViaMessagingTool && !replyMetaRef.didStreamReply) {
         await restoreHeartbeatUpdatedAt({
           storePath,
           sessionKey,
@@ -812,7 +812,7 @@ export async function runHeartbeatOnce(opts: {
       startedAt - prevHeartbeatAt < 24 * 60 * 60 * 1000;
 
     if (isDuplicateMain) {
-      if (!replyMetaRef.didSendViaMessagingTool) {
+      if (!replyMetaRef.didSendViaMessagingTool && !replyMetaRef.didStreamReply) {
         await restoreHeartbeatUpdatedAt({
           storePath,
           sessionKey,
