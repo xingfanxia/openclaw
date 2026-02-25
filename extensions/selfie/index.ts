@@ -131,9 +131,11 @@ export default function register(api: OpenClawPluginApi) {
         label: "Image Generate",
         name: "image_generate",
         description: [
-          "Generate a photorealistic selfie using face reference images + your scene description.",
-          "Uses hybrid s2 strategy: face accuracy from reference photos, body from text, scene from you.",
+          "Generate a photorealistic selfie of the bot's OWN persona (built-in fixed identity).",
+          "This is for the bot's self-portraits/selfies ONLY — do NOT use for other people's photos.",
+          "If the user provides reference images of someone else, use photoshoot_generate instead.",
           "",
+          "Uses hybrid s2 strategy: face accuracy from built-in reference photos, body from text, scene from you.",
           "The tool handles face consistency, body description, and photo style automatically.",
           "You write a creative scene prompt and pick the right style for the context.",
           "",

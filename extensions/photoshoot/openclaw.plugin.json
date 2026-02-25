@@ -1,0 +1,19 @@
+{
+  "id": "photoshoot",
+  "name": "Photoshoot Generator",
+  "description": "Generate influencer-style photo sets from user-provided reference images. Produces multiple photos with different poses at a user-specified location.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "geminiApiKey": {
+        "type": "string",
+        "description": "Gemini API key. Falls back to GEMINI_API_KEY env var."
+      },
+      "outputDir": {
+        "type": "string",
+        "description": "Directory to save generated images. Default: /tmp/openclaw-photoshoot"
+      }
+    }
+  }
+}
