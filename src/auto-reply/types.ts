@@ -51,6 +51,8 @@ export type GetReplyOptions = {
   skillFilter?: string[];
   /** Mutable ref to track if a reply was sent (for Slack "first" threading mode). */
   hasRepliedRef?: { value: boolean };
+  /** Mutable ref populated during the reply pipeline with metadata (e.g. messaging tool usage). */
+  replyMetaRef?: { didSendViaMessagingTool?: boolean };
   /** Override agent timeout in seconds (0 = no timeout). Threads through to resolveAgentTimeoutMs. */
   timeoutOverrideSeconds?: number;
 };

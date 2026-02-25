@@ -719,9 +719,10 @@ export async function runHeartbeatOnce(opts: {
 
     const heartbeatModelOverride = heartbeat?.model?.trim() || undefined;
     const suppressToolErrorWarnings = heartbeat?.suppressToolErrorWarnings === true;
+    const replyMetaRef: { didSendViaMessagingTool?: boolean } = {};
     const replyOpts = heartbeatModelOverride
-      ? { isHeartbeat: true, heartbeatModelOverride, suppressToolErrorWarnings }
-      : { isHeartbeat: true, suppressToolErrorWarnings };
+      ? { isHeartbeat: true, heartbeatModelOverride, suppressToolErrorWarnings, replyMetaRef }
+      : { isHeartbeat: true, suppressToolErrorWarnings, replyMetaRef };
     const replyResult = await getReplyFromConfig(ctx, replyOpts, cfg);
     const replyPayload = resolveHeartbeatReplyPayload(replyResult);
     const includeReasoning = heartbeat?.includeReasoning === true;
@@ -733,13 +734,15 @@ export async function runHeartbeatOnce(opts: {
       !replyPayload ||
       (!replyPayload.text && !replyPayload.mediaUrl && !replyPayload.mediaUrls?.length)
     ) {
-      await restoreHeartbeatUpdatedAt({
-        storePath,
-        sessionKey,
-        updatedAt: previousUpdatedAt,
-      });
-      // Prune the transcript to remove HEARTBEAT_OK turns
-      await pruneHeartbeatTranscript(transcriptState);
+      if (!replyMetaRef.didSendViaMessagingTool) {
+        await restoreHeartbeatUpdatedAt({
+          storePath,
+          sessionKey,
+          updatedAt: previousUpdatedAt,
+        });
+        // Prune the transcript to remove HEARTBEAT_OK turns
+        await pruneHeartbeatTranscript(transcriptState);
+      }
       const okSent = await maybeSendHeartbeatOk();
       emitHeartbeatEvent({
         status: "ok-empty",
@@ -769,13 +772,15 @@ export async function runHeartbeatOnce(opts: {
     }
     const shouldSkipMain = normalized.shouldSkip && !normalized.hasMedia && !hasExecCompletion;
     if (shouldSkipMain && reasoningPayloads.length === 0) {
-      await restoreHeartbeatUpdatedAt({
-        storePath,
-        sessionKey,
-        updatedAt: previousUpdatedAt,
-      });
-      // Prune the transcript to remove HEARTBEAT_OK turns
-      await pruneHeartbeatTranscript(transcriptState);
+      if (!replyMetaRef.didSendViaMessagingTool) {
+        await restoreHeartbeatUpdatedAt({
+          storePath,
+          sessionKey,
+          updatedAt: previousUpdatedAt,
+        });
+        // Prune the transcript to remove HEARTBEAT_OK turns
+        await pruneHeartbeatTranscript(transcriptState);
+      }
       const okSent = await maybeSendHeartbeatOk();
       emitHeartbeatEvent({
         status: "ok-token",
@@ -807,13 +812,15 @@ export async function runHeartbeatOnce(opts: {
       startedAt - prevHeartbeatAt < 24 * 60 * 60 * 1000;
 
     if (isDuplicateMain) {
-      await restoreHeartbeatUpdatedAt({
-        storePath,
-        sessionKey,
-        updatedAt: previousUpdatedAt,
-      });
-      // Prune the transcript to remove duplicate heartbeat turns
-      await pruneHeartbeatTranscript(transcriptState);
+      if (!replyMetaRef.didSendViaMessagingTool) {
+        await restoreHeartbeatUpdatedAt({
+          storePath,
+          sessionKey,
+          updatedAt: previousUpdatedAt,
+        });
+        // Prune the transcript to remove duplicate heartbeat turns
+        await pruneHeartbeatTranscript(transcriptState);
+      }
       emitHeartbeatEvent({
         status: "skipped",
         reason: "duplicate",

@@ -521,6 +521,14 @@ export async function runReplyAgent(params: {
     const { replyPayloads } = payloadResult;
     didLogHeartbeatStrip = payloadResult.didLogHeartbeatStrip;
 
+    // Propagate messaging tool signal to callers (e.g. heartbeat runner) via mutable ref
+    if (
+      opts?.replyMetaRef &&
+      (runResult.didSendViaMessagingTool || (runResult.messagingToolSentTexts?.length ?? 0) > 0)
+    ) {
+      opts.replyMetaRef.didSendViaMessagingTool = true;
+    }
+
     if (replyPayloads.length === 0) {
       return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
     }
