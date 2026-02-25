@@ -39,6 +39,7 @@ import {
   parseTtsDirectives,
   scheduleCleanup,
   summarizeText,
+  volcanoTTS,
 } from "./tts-core.js";
 export { OPENAI_TTS_MODELS, OPENAI_TTS_VOICES } from "./tts-core.js";
 
@@ -55,6 +56,9 @@ const DEFAULT_OPENAI_VOICE = "alloy";
 const DEFAULT_EDGE_VOICE = "en-US-MichelleNeural";
 const DEFAULT_EDGE_LANG = "en-US";
 const DEFAULT_EDGE_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
+
+const DEFAULT_VOLCANO_SPEAKER = "zh_female_linzhiling_mars_bigtts";
+const DEFAULT_VOLCANO_RESOURCE_ID = "seed-tts-1.0";
 
 const DEFAULT_ELEVENLABS_VOICE_SETTINGS = {
   stability: 0.5,
@@ -127,6 +131,12 @@ export type ResolvedTtsConfig = {
     saveSubtitles: boolean;
     proxy?: string;
     timeoutMs?: number;
+  };
+  volcano: {
+    appId?: string;
+    accessKey?: string;
+    resourceId: string;
+    speaker: string;
   };
   prefsPath?: string;
   maxTextLength: number;
@@ -303,6 +313,12 @@ export function resolveTtsConfig(cfg: OpenClawConfig): ResolvedTtsConfig {
       proxy: raw.edge?.proxy?.trim() || undefined,
       timeoutMs: raw.edge?.timeoutMs,
     },
+    volcano: {
+      appId: raw.volcano?.appId || process.env.VOLC_TTS_APP_ID,
+      accessKey: raw.volcano?.accessKey || process.env.VOLC_TTS_ACCESS_TOKEN,
+      resourceId: raw.volcano?.resourceId ?? DEFAULT_VOLCANO_RESOURCE_ID,
+      speaker: raw.volcano?.speaker ?? DEFAULT_VOLCANO_SPEAKER,
+    },
     prefsPath: raw.prefsPath,
     maxTextLength: raw.maxTextLength ?? DEFAULT_MAX_TEXT_LENGTH,
     timeoutMs: raw.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -362,14 +378,24 @@ export function buildTtsSystemPromptHint(cfg: OpenClawConfig): string | undefine
       : autoMode === "tagged"
         ? "Only use TTS when you include [[tts]] or [[tts:text]] tags."
         : undefined;
-  return [
+  const lines = [
     "Voice (TTS) is enabled.",
     autoHint,
     `Keep spoken text ≤${maxLength} chars to avoid auto-summary (summary ${summarize}).`,
     "Use [[tts:...]] and optional [[tts:text]]...[[/tts:text]] to control voice/expressiveness.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ];
+  if (autoMode === "tagged") {
+    lines.push(
+      "",
+      "When to send voice messages:",
+      '- When the user asks to hear your voice ("发个语音", "想听你的声音", "say it").',
+      "- Proactively when you feel voice fits better than text — no scene restriction, use your judgment.",
+      "- Keep voice text conversational and natural; strip emoji/symbols (TTS cannot read them).",
+      "- Do not send voice for every message — most replies should stay as text.",
+      "- Never use voice for code, lists, or information-dense content.",
+    );
+  }
+  return lines.filter(Boolean).join("\n");
 }
 
 function readPrefs(prefsPath: string): TtsUserPrefs {
@@ -441,6 +467,9 @@ export function getTtsProvider(config: ResolvedTtsConfig, prefsPath: string): Tt
   if (resolveTtsApiKey(config, "elevenlabs")) {
     return "elevenlabs";
   }
+  if (resolveTtsApiKey(config, "volcano")) {
+    return "volcano";
+  }
   return "edge";
 }
 
@@ -505,10 +534,15 @@ export function resolveTtsApiKey(
   if (provider === "openai") {
     return config.openai.apiKey || process.env.OPENAI_API_KEY;
   }
+  if (provider === "volcano") {
+    const appId = config.volcano.appId;
+    const accessKey = config.volcano.accessKey;
+    return appId && accessKey ? appId : undefined;
+  }
   return undefined;
 }
 
-export const TTS_PROVIDERS = ["openai", "elevenlabs", "edge"] as const;
+export const TTS_PROVIDERS = ["openai", "elevenlabs", "edge", "volcano"] as const;
 
 export function resolveTtsProviderOrder(primary: TtsProvider): TtsProvider[] {
   return [primary, ...TTS_PROVIDERS.filter((provider) => provider !== primary)];
@@ -517,6 +551,9 @@ export function resolveTtsProviderOrder(primary: TtsProvider): TtsProvider[] {
 export function isTtsProviderConfigured(config: ResolvedTtsConfig, provider: TtsProvider): boolean {
   if (provider === "edge") {
     return config.edge.enabled;
+  }
+  if (provider === "volcano") {
+    return Boolean(config.volcano.appId && config.volcano.accessKey);
   }
   return Boolean(resolveTtsApiKey(config, provider));
 }
@@ -628,6 +665,40 @@ export async function textToSpeech(params: {
         };
       }
 
+      if (provider === "volcano") {
+        const { appId, accessKey } = config.volcano;
+        if (!appId || !accessKey) {
+          errors.push("volcano: no appId or accessKey");
+          continue;
+        }
+
+        const audioBuffer = await volcanoTTS({
+          text: params.text,
+          appId,
+          accessKey,
+          resourceId: config.volcano.resourceId,
+          speaker: config.volcano.speaker,
+          timeoutMs: config.timeoutMs,
+        });
+
+        const latencyMs = Date.now() - providerStart;
+        const tempRoot = resolvePreferredOpenClawTmpDir();
+        mkdirSync(tempRoot, { recursive: true, mode: 0o700 });
+        const tempDir = mkdtempSync(path.join(tempRoot, "tts-"));
+        const audioPath = path.join(tempDir, `voice-${Date.now()}.mp3`);
+        writeFileSync(audioPath, audioBuffer);
+        scheduleCleanup(tempDir);
+
+        return {
+          success: true,
+          audioPath,
+          latencyMs,
+          provider,
+          outputFormat: "mp3",
+          voiceCompatible: false,
+        };
+      }
+
       const apiKey = resolveTtsApiKey(config, provider);
       if (!apiKey) {
         errors.push(`${provider}: no API key`);
@@ -724,6 +795,10 @@ export async function textToSpeechTelephony(params: {
     try {
       if (provider === "edge") {
         errors.push("edge: unsupported for telephony");
+        continue;
+      }
+      if (provider === "volcano") {
+        errors.push("volcano: unsupported for telephony");
         continue;
       }
 

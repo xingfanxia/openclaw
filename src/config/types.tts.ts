@@ -1,4 +1,4 @@
-export type TtsProvider = "elevenlabs" | "openai" | "edge";
+export type TtsProvider = "elevenlabs" | "openai" | "edge" | "volcano";
 
 export type TtsMode = "final" | "all";
 
@@ -72,6 +72,13 @@ export type TtsConfig = {
     saveSubtitles?: boolean;
     proxy?: string;
     timeoutMs?: number;
+  };
+  /** Volcano Engine (火山引擎) configuration. */
+  volcano?: {
+    appId?: string;
+    accessKey?: string;
+    resourceId?: string;
+    speaker?: string;
   };
   /** Optional path for local TTS user preferences JSON. */
   prefsPath?: string;

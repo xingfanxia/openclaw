@@ -139,7 +139,12 @@ export function parseTtsDirectives(
             if (!policy.allowProvider) {
               break;
             }
-            if (rawValue === "openai" || rawValue === "elevenlabs" || rawValue === "edge") {
+            if (
+              rawValue === "openai" ||
+              rawValue === "elevenlabs" ||
+              rawValue === "edge" ||
+              rawValue === "volcano"
+            ) {
               overrides.provider = rawValue;
             } else {
               warnings.push(`unsupported provider "${rawValue}"`);
@@ -629,6 +634,80 @@ export async function openaiTTS(params: {
     }
 
     return Buffer.from(await response.arrayBuffer());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function volcanoTTS(params: {
+  text: string;
+  appId: string;
+  accessKey: string;
+  resourceId: string;
+  speaker: string;
+  timeoutMs: number;
+}): Promise<Buffer> {
+  const { text, appId, accessKey, resourceId, speaker, timeoutMs } = params;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch("https://openspeech.bytedance.com/api/v3/tts/unidirectional", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-App-Id": appId,
+        "X-Api-Access-Key": accessKey,
+        "X-Api-Resource-Id": resourceId,
+      },
+      body: JSON.stringify({
+        user: { uid: "openclaw-tts" },
+        req_params: {
+          text,
+          speaker,
+          audio_params: {
+            format: "mp3",
+            sample_rate: 24000,
+          },
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Volcano TTS API error (${response.status})`);
+    }
+
+    const body = await response.text();
+    const chunks: Buffer[] = [];
+
+    for (const line of body.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      let parsed: { code: number; data: string | null };
+      try {
+        parsed = JSON.parse(trimmed) as { code: number; data: string | null };
+      } catch {
+        continue;
+      }
+      if (parsed.code === 0 && parsed.data) {
+        chunks.push(Buffer.from(parsed.data, "base64"));
+      } else if (parsed.code === 20000000) {
+        // End-of-stream marker
+        break;
+      } else if (parsed.code !== 0) {
+        throw new Error(`Volcano TTS stream error (code ${parsed.code})`);
+      }
+    }
+
+    if (chunks.length === 0) {
+      throw new Error("Volcano TTS returned no audio data");
+    }
+
+    return Buffer.concat(chunks);
   } finally {
     clearTimeout(timeout);
   }
