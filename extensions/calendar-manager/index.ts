@@ -1,5 +1,4 @@
 import type { OpenClawPluginApi } from "../../src/plugins/types.js";
-import type { PluginConfig } from "./src/types.js";
 import { getCalendarStatuses, formatCalendarStatusText } from "./src/commands/calendar-status.js";
 import { createCalendarAgendaTool } from "./src/tools/calendar-agenda.js";
 import { createCalendarCreateTool } from "./src/tools/calendar-create.js";
@@ -8,11 +7,16 @@ import { createCalendarEventsTool } from "./src/tools/calendar-events.js";
 import { createCalendarListTool } from "./src/tools/calendar-list.js";
 import { createCalendarQuickAddTool } from "./src/tools/calendar-quick-add.js";
 import { createCalendarUpdateTool } from "./src/tools/calendar-update.js";
+import type { PluginConfig } from "./src/types.js";
 
 export default function register(api: OpenClawPluginApi): void {
   const config = (api.pluginConfig ?? {}) as PluginConfig;
   const { accounts, oauth } = config;
-  const defaultTimezone = config.defaultTimezone ?? "America/Los_Angeles";
+  // Prefer the global user timezone from agents.defaults, fall back to plugin config, then PST.
+  const defaultTimezone =
+    api.config.agents?.defaults?.userTimezone?.trim() ||
+    config.defaultTimezone ||
+    "America/Los_Angeles";
   const defaultAccount = config.defaultAccount ?? accounts[0]?.id ?? "work";
   const aliases = config.accountAliases ?? {};
 
