@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stripMarkdown } from "../line/markdown-to-line.js";
+import { stripActionMarkers } from "./tts.js";
 
 /**
  * Tests that stripMarkdown (used in the TTS pipeline via maybeApplyTtsToPayload)
@@ -63,5 +64,57 @@ Use \`B-tree\` for read-heavy, \`LSM-tree\` for write-heavy.`;
     expect(result).not.toContain("---");
     expect(result).toContain("B-tree vs LSM-tree");
     expect(result).toContain("B-tree uses in-place updates");
+  });
+});
+
+describe("TTS text preparation – stripActionMarkers", () => {
+  it("strips Chinese parenthetical actions", () => {
+    expect(stripActionMarkers("摸摸头 (笑) 你好")).toBe("摸摸头 你好");
+    expect(stripActionMarkers("好的(想了想)我觉得可以")).toBe("好的我觉得可以");
+    expect(stripActionMarkers("加油！（鼓掌）继续")).toBe("加油！继续");
+  });
+
+  it("strips English parenthetical actions", () => {
+    expect(stripActionMarkers("Hello (sighs) world")).toBe("Hello world");
+    expect(stripActionMarkers("Sure (laughs) okay")).toBe("Sure okay");
+  });
+
+  it("strips square-bracket stage directions", () => {
+    expect(stripActionMarkers("I think [pauses] yes")).toBe("I think yes");
+    expect(stripActionMarkers("[laughs] That's funny")).toBe("That's funny");
+  });
+
+  it("strips CJK bracket actions", () => {
+    expect(stripActionMarkers("好的【鼓掌】真棒")).toBe("好的真棒");
+    expect(stripActionMarkers("嗯〔点头〕同意")).toBe("嗯同意");
+  });
+
+  it("preserves parenthetical content with numbers", () => {
+    expect(stripActionMarkers("用量 (200mg) 每天")).toBe("用量 (200mg) 每天");
+    expect(stripActionMarkers("大约 (3次) 就好")).toBe("大约 (3次) 就好");
+  });
+
+  it("preserves parenthetical content with punctuation (real clauses)", () => {
+    expect(stripActionMarkers("这个 (就是说, 很重要) 要注意")).toBe("这个 (就是说, 很重要) 要注意");
+  });
+
+  it("preserves long parenthetical content (>12 chars)", () => {
+    expect(stripActionMarkers("注意 (这个很重要一定要记住这件事情) 好的")).toBe(
+      "注意 (这个很重要一定要记住这件事情) 好的",
+    );
+  });
+
+  it("handles multiple markers in one string", () => {
+    const input = "摸摸头(笑) 你好啊！(鼓掌) 真棒【开心】";
+    const result = stripActionMarkers(input);
+    expect(result).toBe("摸摸头 你好啊！ 真棒");
+  });
+
+  it("handles emoji clusters in parentheses", () => {
+    expect(stripActionMarkers("好棒(🎉🎉)继续加油")).toBe("好棒继续加油");
+  });
+
+  it("returns empty-ish text unchanged when all content is markers", () => {
+    expect(stripActionMarkers("(笑)")).toBe("");
   });
 });

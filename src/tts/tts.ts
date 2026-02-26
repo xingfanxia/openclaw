@@ -863,6 +863,52 @@ export async function textToSpeechTelephony(params: {
   };
 }
 
+/**
+ * Strip roleplay action markers and onomatopoeia that should not be read aloud.
+ *
+ * Covers:
+ *  - Parenthetical actions/emotions: (笑), (sighs), (想了想)
+ *  - Full-width parentheses: （鼓掌）
+ *  - Square-bracket stage directions: [laughs], [action]
+ *  - CJK brackets: 【动作】, 〔笑〕
+ *  - Emoji-only parenthetical clusters: (😤), (🎉🎉)
+ *
+ * Does NOT strip parenthetical content that looks like real speech — only
+ * short, non-sentence fragments (≤12 chars) that match action/emote patterns.
+ */
+export function stripActionMarkers(text: string): string {
+  let result = text;
+
+  // Parenthetical short actions: (笑), (sighs heavily), (想了想), （鼓掌）
+  // Only strip when content is short (≤12 chars) and doesn't look like a real sentence.
+  result = result.replace(/[（(][^)）]{1,12}[)）]/g, (match) => {
+    const inner = match.slice(1, -1).trim();
+    // Keep if it contains digits (likely data), or looks like a real clause with punctuation
+    if (/\d/.test(inner) || /[.?!。？！，,]/.test(inner)) {
+      return match;
+    }
+    return "";
+  });
+
+  // Square-bracket stage directions: [laughs], [action description]
+  result = result.replace(/\[[^\]]{1,12}\]/g, (match) => {
+    const inner = match.slice(1, -1).trim();
+    if (/\d/.test(inner) || /[.?!。？！，,]/.test(inner)) {
+      return match;
+    }
+    return "";
+  });
+
+  // CJK brackets: 【动作】, 〔笑〕
+  result = result.replace(/[【〔][^】〕]{1,12}[】〕]/g, "");
+
+  // Clean up leftover whitespace
+  result = result.replace(/\s{2,}/g, " ");
+  result = result.replace(/^\s+|\s+$/gm, (m) => m.replace(/ +/g, ""));
+
+  return result.trim();
+}
+
 export async function maybeApplyTtsToPayload(params: {
   payload: ReplyPayload;
   cfg: OpenClawConfig;
@@ -962,6 +1008,7 @@ export async function maybeApplyTtsToPayload(params: {
   }
 
   textForAudio = stripMarkdown(textForAudio).trim(); // strip markdown for TTS (### → "hashtag" etc.)
+  textForAudio = stripActionMarkers(textForAudio); // strip roleplay actions like (笑), [sighs], 【动作】
   if (textForAudio.length < 10) {
     return nextPayload;
   }
