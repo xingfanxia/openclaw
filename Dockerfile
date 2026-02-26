@@ -1,8 +1,9 @@
 FROM node:22-bookworm@sha256:cd7bcd2e7a1e6f72052feb023c7f6b722205d3fcab7bbcbd2d1bfdab10b1e935
 
 # Install Bun (required for build scripts)
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:${PATH}"
+# Install to /usr/local so it's accessible by both root and node users
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
+ENV PATH="/usr/local/bin:${PATH}"
 
 RUN corepack enable
 
@@ -91,8 +92,10 @@ RUN ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk /app/node_m
     && mkdir -p /app/node_modules/@openai \
     && ln -s /usr/local/lib/node_modules/@openai/codex-sdk /app/node_modules/@openai/codex-sdk
 
-# Allow non-root user to write temp files during runtime/tests.
-RUN chown -R node:node /app
+# Fix ownership on only the dirs/symlinks root created (not the entire /app tree).
+# pnpm install already ran as USER node, so node_modules is already node-owned.
+RUN chown -h node:node /app/node_modules/@anthropic-ai/claude-agent-sdk \
+    /app/node_modules/@openai /app/node_modules/@openai/codex-sdk
 
 # Pre-create writable dirs for Claude Code and Codex CLIs.
 # Credential files are bind-mounted read-only at runtime; these dirs
