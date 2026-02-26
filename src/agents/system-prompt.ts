@@ -280,6 +280,7 @@ export function buildAgentSystemPrompt(params: {
     sessions_send: "Send a message to another session/sub-agent",
     sessions_spawn: "Spawn a sub-agent session",
     subagents: "List, steer, or kill sub-agent runs for this requester session",
+    current_time: "Get the current date, time, day of week, and timezone",
     session_status:
       "Show a /status-equivalent status card (usage + time + Reasoning/Verbose/Elevated); use for model-use questions (📊 session_status); optional per-session model override",
     image: "Analyze an image with the configured image model",
@@ -308,6 +309,7 @@ export function buildAgentSystemPrompt(params: {
     "sessions_history",
     "sessions_send",
     "subagents",
+    "current_time",
     "session_status",
     "image",
   ];
