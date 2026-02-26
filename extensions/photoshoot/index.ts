@@ -29,7 +29,10 @@ const POSE_LIBRARY = [
  * Face from user-provided reference images, scene/pose from parameters.
  */
 function buildPrompt(opts: {
-  location: string;
+  location?: string;
+  hasCustomSceneImages?: boolean;
+  hasInspirationImages?: boolean;
+  sceneDescription?: string;
   pose: string;
   style: PhotoStyle;
   outfit?: string;
@@ -90,6 +93,29 @@ function buildPrompt(opts: {
     ],
   };
 
+  // Inspiration reference (抄作业)
+  const inspirationLines: string[] = [];
+  if (opts.hasInspirationImages) {
+    inspirationLines.push(
+      "STYLE REFERENCE (灵感图/抄作业):",
+      "The inspiration photo(s) show the TARGET LOOK you must recreate.",
+      "Match these elements from the inspiration:",
+      "- Composition & framing (camera angle, distance, crop style)",
+      "- Lighting direction, quality, and mood",
+      "- Color grading & filter style (warm/cool, contrast, saturation)",
+      "- Pose style and body language (similar energy, not exact copy)",
+      "- Overall atmosphere and aesthetic vibe",
+      "- Clothing style (similar category/vibe unless outfit is specified separately)",
+      "",
+      "DO NOT copy the face/identity from the inspiration photo.",
+      "The person must be from the reference photos ONLY.",
+      "The inspiration photo is ONLY for style, composition, and mood reference.",
+    );
+  }
+
+  // Skip preset style notes when inspiration images provide the style
+  const activeStyleNotes = opts.hasInspirationImages ? [] : styleNotes[opts.style];
+
   const outfitLine = opts.outfit
     ? `Outfit: ${opts.outfit}`
     : "Outfit: stylish, flattering, appropriate for the location and style.";
@@ -98,12 +124,30 @@ function buildPrompt(opts: {
     ? `Mood/vibe: ${opts.mood}`
     : "Mood/vibe: confident, natural, photogenic.";
 
+  // Scene section — supports custom scene images or text location
+  const sceneLines: string[] = [];
+  if (opts.hasCustomSceneImages) {
+    sceneLines.push(
+      "Scene: Use the uploaded scene reference photo(s) as the exact background and environment.",
+      "Place this person naturally in that scene.",
+      "Match the lighting, color temperature, and atmosphere of the scene photo.",
+    );
+    const desc = opts.sceneDescription || opts.location;
+    if (desc) {
+      sceneLines.push(`Additional scene context: ${desc}`);
+    }
+  } else {
+    sceneLines.push(
+      `Location/scene: ${opts.location || opts.sceneDescription || "a beautiful location"}`,
+    );
+  }
+
   return [
     ...face,
     "",
-    ...styleNotes[opts.style],
-    "",
-    `Location/scene: ${opts.location}`,
+    ...(inspirationLines.length > 0 ? [...inspirationLines, ""] : []),
+    ...(activeStyleNotes.length > 0 ? [...activeStyleNotes, ""] : []),
+    ...sceneLines,
     `Pose: ${opts.pose}`,
     outfitLine,
     moodLine,
@@ -144,12 +188,21 @@ async function generateSinglePhoto(opts: {
   apiKey: string;
   prompt: string;
   refImages: Array<{ mimeType: string; data: string }>;
+  inspirationImages?: Array<{ mimeType: string; data: string }>;
+  sceneImages?: Array<{ mimeType: string; data: string }>;
   outputDir: string;
   index: number;
 }): Promise<{ filePath: string; sizeKB: number } | { error: string }> {
+  // Order: prompt → person refs → inspiration refs → scene refs
   const parts: Array<Record<string, unknown>> = [
     { text: opts.prompt },
     ...opts.refImages.map((img) => ({
+      inlineData: { mimeType: img.mimeType, data: img.data },
+    })),
+    ...(opts.inspirationImages ?? []).map((img) => ({
+      inlineData: { mimeType: img.mimeType, data: img.data },
+    })),
+    ...(opts.sceneImages ?? []).map((img) => ({
       inlineData: { mimeType: img.mimeType, data: img.data },
     })),
   ];
@@ -240,8 +293,8 @@ export default function register(api: OpenClawPluginApi) {
           "",
           "## How it works:",
           "1. User sends reference photo(s) of a person (saved to disk by media pipeline)",
-          "2. User specifies a location/scene",
-          "3. Tool generates multiple photos with varied poses at that location",
+          "2. User specifies a location/scene via text OR uploads scene reference photo(s)",
+          "3. Tool generates multiple photos with varied poses at that location/scene",
           "4. Send each photo using the message tool",
           "",
           "## Styles:",
@@ -251,7 +304,7 @@ export default function register(api: OpenClawPluginApi) {
           '- "editorial" — fashion magazine quality, dramatic, cinematic',
           "",
           "## Workflow:",
-          "1. Call photoshoot_generate with referenceImages (file paths) + location + count",
+          "1. Call photoshoot_generate with referenceImages + location/sceneImages/inspirationImages + count",
           "2. Tool returns file paths for each generated photo",
           "3. Send each photo using the message tool with action='send', media=<path>",
           "",
@@ -271,7 +324,25 @@ export default function register(api: OpenClawPluginApi) {
               type: "string",
               description:
                 "Location/scene description. All photos will be set in this location. " +
-                "Be specific: 'cherry blossom garden in Kyoto at golden hour' is better than 'park'.",
+                "Be specific: 'cherry blossom garden in Kyoto at golden hour' is better than 'park'. " +
+                "Optional if sceneImages is provided.",
+            },
+            sceneImages: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Optional file paths to scene/location reference photos (1-3 images). " +
+                "When provided, the person will be placed in the exact scene shown in these photos. " +
+                "Can be used with or without a text location description.",
+            },
+            inspirationImages: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Optional file paths to inspiration/style reference photos (1-3 images). " +
+                "抄作业: the generated photo will match the composition, lighting, color grading, " +
+                "pose style, and overall aesthetic of these photos. " +
+                "Face/identity comes from referenceImages, NOT from inspiration photos.",
             },
             count: {
               type: "number",
@@ -297,7 +368,7 @@ export default function register(api: OpenClawPluginApi) {
                 "Optional mood/vibe description (e.g., 'dreamy', 'confident', 'playful').",
             },
           },
-          required: ["referenceImages", "location"],
+          required: ["referenceImages"],
         },
         execute: async (_toolCallId: string, args: unknown) => {
           const params = args as Record<string, unknown>;
@@ -327,8 +398,45 @@ export default function register(api: OpenClawPluginApi) {
           }
 
           const location = typeof params.location === "string" ? params.location.trim() : "";
-          if (!location) {
-            throw new Error("location is required.");
+
+          // Load scene images if provided
+          const scenePaths = Array.isArray(params.sceneImages)
+            ? (params.sceneImages as string[])
+                .map((p) => (typeof p === "string" ? p.trim() : ""))
+                .filter(Boolean)
+            : [];
+          if (scenePaths.length > 3) {
+            throw new Error("Maximum 3 scene images allowed.");
+          }
+          for (const p of scenePaths) {
+            try {
+              await fs.access(p);
+            } catch {
+              throw new Error(`Scene image not found: ${p}`);
+            }
+          }
+          const hasSceneImages = scenePaths.length > 0;
+
+          // Load inspiration images if provided (抄作业)
+          const inspirationPaths = Array.isArray(params.inspirationImages)
+            ? (params.inspirationImages as string[])
+                .map((p) => (typeof p === "string" ? p.trim() : ""))
+                .filter(Boolean)
+            : [];
+          if (inspirationPaths.length > 3) {
+            throw new Error("Maximum 3 inspiration images allowed.");
+          }
+          for (const p of inspirationPaths) {
+            try {
+              await fs.access(p);
+            } catch {
+              throw new Error(`Inspiration image not found: ${p}`);
+            }
+          }
+          const hasInspirationImages = inspirationPaths.length > 0;
+
+          if (!location && !hasSceneImages && !hasInspirationImages) {
+            throw new Error("Either location, sceneImages, or inspirationImages is required.");
           }
 
           const rawCount = typeof params.count === "number" ? params.count : 4;
@@ -349,11 +457,15 @@ export default function register(api: OpenClawPluginApi) {
           }
 
           console.log(
-            `[photoshoot] starting: ${count} photos, ${validPaths.length} refs, style=${style}, location="${location.slice(0, 60)}"`,
+            `[photoshoot] starting: ${count} photos, ${validPaths.length} refs, ${inspirationPaths.length} inspiration, ${scenePaths.length} scene imgs, style=${style}, location="${(location || "custom scene").slice(0, 60)}"`,
           );
 
-          // Load reference images
+          // Load reference images, inspiration images, and scene images
           const refImages = await loadReferenceImages(validPaths);
+          const inspirationImages = hasInspirationImages
+            ? await loadReferenceImages(inspirationPaths)
+            : undefined;
+          const sceneImages = hasSceneImages ? await loadReferenceImages(scenePaths) : undefined;
 
           await fs.mkdir(outputDir, { recursive: true });
 
@@ -372,7 +484,10 @@ export default function register(api: OpenClawPluginApi) {
             console.log(`[photoshoot] queuing photo ${i + 1}/${count}: "${pose.slice(0, 50)}..."`);
 
             const prompt = buildPrompt({
-              location,
+              location: location || undefined,
+              hasCustomSceneImages: hasSceneImages,
+              hasInspirationImages: hasInspirationImages,
+              sceneDescription: location || undefined,
               pose,
               style,
               outfit,
@@ -384,6 +499,8 @@ export default function register(api: OpenClawPluginApi) {
               apiKey,
               prompt,
               refImages,
+              inspirationImages,
+              sceneImages,
               outputDir,
               index: i,
             }).then(
@@ -410,9 +527,10 @@ export default function register(api: OpenClawPluginApi) {
 
           const lines: string[] = [
             `Photoshoot complete: ${successful.length}/${count} photos generated.`,
-            `Location: ${location}`,
+            `Location: ${location || (hasSceneImages ? "custom scene (from uploaded photos)" : "unspecified")}`,
             `Style: ${style}`,
             `Reference images: ${refImages.length}`,
+            ...(hasSceneImages ? [`Scene images: ${scenePaths.length}`] : []),
             "",
           ];
 
