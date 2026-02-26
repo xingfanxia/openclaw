@@ -412,6 +412,29 @@ export function formatRawAssistantErrorForUi(raw?: string): string {
   return trimmed.length > 600 ? `${trimmed.slice(0, 600)}…` : trimmed;
 }
 
+/** Detect network/transport errors that should never be shown raw to users. */
+const NETWORK_ERROR_PATTERNS = [
+  "fetch failed",
+  "typeerror: fetch failed",
+  "socket hang up",
+  "network error",
+  "econnreset",
+  "econnrefused",
+  "etimedout",
+  "enetunreach",
+  "ehostunreach",
+  "enotfound",
+  "eai_again",
+  "getaddrinfo",
+  "client network socket disconnected",
+  "undici",
+] as const;
+
+function isNetworkTransportError(raw: string): boolean {
+  const lower = raw.trim().toLowerCase();
+  return NETWORK_ERROR_PATTERNS.some((p) => lower.includes(p));
+}
+
 export function formatAssistantErrorText(
   msg: AssistantMessage,
   opts?: { cfg?: OpenClawConfig; sessionKey?: string; provider?: string; model?: string },
@@ -486,6 +509,12 @@ export function formatAssistantErrorText(
 
   if (isLikelyHttpErrorText(raw) || isRawApiErrorPayload(raw)) {
     return formatRawAssistantErrorForUi(raw);
+  }
+
+  // Catch network/transport errors (fetch failed, socket hang up, etc.)
+  // These should never be shown raw to the user.
+  if (isNetworkTransportError(raw)) {
+    return "Network error — please try again.";
   }
 
   // Never return raw unhandled errors - log for debugging but return safe message

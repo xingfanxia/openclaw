@@ -1,5 +1,6 @@
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { isReasoningTagProvider } from "../utils/provider-utils.js";
 import { resolveAgentConfig, resolveAgentModelPrimary } from "./agent-scope.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
 import type { ModelCatalogEntry } from "./model-catalog.js";
@@ -535,6 +536,14 @@ export function resolveReasoningDefault(params: {
   model: string;
   catalog?: ModelCatalogEntry[];
 }): "on" | "off" {
+  // Tag-based reasoning providers (google, minimax, etc.) handle thinking via
+  // <think> tags that are stripped by stripBlockTags. Auto-enabling reasoning
+  // display for these providers causes "Reasoning:" formatted text to leak as
+  // a permanent message (the thinking is already extracted via native API fields
+  // and formatted by formatReasoningMessage, bypassing the tag stripping).
+  if (isReasoningTagProvider(params.provider)) {
+    return "off";
+  }
   const key = modelKey(params.provider, params.model);
   const candidate = params.catalog?.find(
     (entry) =>
