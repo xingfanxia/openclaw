@@ -365,16 +365,11 @@ export default function register(api: OpenClawPluginApi) {
             selectedPoses.push("natural, relaxed pose with confident expression, unique angle");
           }
 
-          // Generate photos sequentially (Gemini rate limits + each needs ~30-60s)
-          const results: Array<
-            { filePath: string; sizeKB: number; pose: string } | { error: string; pose: string }
-          > = [];
+          // Generate all photos in parallel
+          console.log(`[photoshoot] launching ${count} parallel generation requests`);
 
-          for (let i = 0; i < count; i++) {
-            const pose = selectedPoses[i];
-            console.log(
-              `[photoshoot] generating photo ${i + 1}/${count}: "${pose.slice(0, 50)}..."`,
-            );
+          const promises = selectedPoses.map((pose, i) => {
+            console.log(`[photoshoot] queuing photo ${i + 1}/${count}: "${pose.slice(0, 50)}..."`);
 
             const prompt = buildPrompt({
               location,
@@ -385,20 +380,27 @@ export default function register(api: OpenClawPluginApi) {
               refCount: refImages.length,
             });
 
-            const result = await generateSinglePhoto({
+            return generateSinglePhoto({
               apiKey,
               prompt,
               refImages,
               outputDir,
               index: i,
-            });
+            }).then(
+              (
+                result,
+              ):
+                | { filePath: string; sizeKB: number; pose: string }
+                | { error: string; pose: string } => {
+                if ("error" in result) {
+                  return { error: result.error, pose };
+                }
+                return { ...result, pose };
+              },
+            );
+          });
 
-            if ("error" in result) {
-              results.push({ error: result.error, pose });
-            } else {
-              results.push({ ...result, pose });
-            }
-          }
+          const results = await Promise.all(promises);
 
           // Build summary
           const successful = results.filter(
