@@ -10,6 +10,7 @@ type PluginCfg = {
 };
 
 const MODEL = "gemini-3-pro-image-preview";
+const ANALYSIS_MODEL = "gemini-2.0-flash";
 
 type PhotoStyle = "natural" | "influencer" | "editorial" | "xiaohongshu";
 
@@ -31,7 +32,7 @@ const POSE_LIBRARY = [
 function buildPrompt(opts: {
   location?: string;
   hasCustomSceneImages?: boolean;
-  hasInspirationImages?: boolean;
+  inspirationStyleDescription?: string;
   sceneDescription?: string;
   pose: string;
   style: PhotoStyle;
@@ -40,16 +41,15 @@ function buildPrompt(opts: {
   refCount: number;
 }): string {
   const face = [
-    `These ${opts.refCount} reference photo(s) show the person — preserve their exact facial features,`,
+    `IMAGE ORDER: The first ${opts.refCount} image(s) after this text are PERSON REFERENCE photos.`,
+    "",
+    `These ${opts.refCount} person reference photo(s) show the ONLY person to generate — preserve their exact facial features,`,
     "eyes, nose, lips, face shape, skin tone, and hair.",
     "Skin quality should look well-maintained and clear from consistent skincare: natural texture is fine,",
     "but avoid obvious acne clusters, inflamed red breakouts, or prominent irritation patches on the face.",
     "",
     "BODY: match the person's body type, build, and proportions as visible in the reference photos.",
     "Do NOT idealize, exaggerate, or change their body shape. Keep it realistic to the reference.",
-    "",
-    "IDENTITY LOCK: this is always the same person from the reference photos.",
-    "Do not drift identity, age, ethnicity, body type, or core proportions between generations.",
   ];
 
   const styleNotes: Record<PhotoStyle, string[]> = {
@@ -93,28 +93,17 @@ function buildPrompt(opts: {
     ],
   };
 
-  // Inspiration reference (抄作业)
+  // Inspiration style description (抄作业 — analyzed as text, image NOT passed to generation)
   const inspirationLines: string[] = [];
-  if (opts.hasInspirationImages) {
+  if (opts.inspirationStyleDescription) {
     inspirationLines.push(
-      "STYLE REFERENCE (灵感图/抄作业):",
-      "The inspiration photo(s) show the TARGET LOOK you must recreate.",
-      "Match these elements from the inspiration:",
-      "- Composition & framing (camera angle, distance, crop style)",
-      "- Lighting direction, quality, and mood",
-      "- Color grading & filter style (warm/cool, contrast, saturation)",
-      "- Pose style and body language (similar energy, not exact copy)",
-      "- Overall atmosphere and aesthetic vibe",
-      "- Clothing style (similar category/vibe unless outfit is specified separately)",
-      "",
-      "DO NOT copy the face/identity from the inspiration photo.",
-      "The person must be from the reference photos ONLY.",
-      "The inspiration photo is ONLY for style, composition, and mood reference.",
+      "STYLE RECREATION (analyzed from inspiration reference — NO style image passed):",
+      opts.inspirationStyleDescription,
     );
   }
 
-  // Skip preset style notes when inspiration images provide the style
-  const activeStyleNotes = opts.hasInspirationImages ? [] : styleNotes[opts.style];
+  // Skip preset style notes when inspiration description provides the style
+  const activeStyleNotes = opts.inspirationStyleDescription ? [] : styleNotes[opts.style];
 
   const outfitLine = opts.outfit
     ? `Outfit: ${opts.outfit}`
@@ -154,7 +143,13 @@ function buildPrompt(opts: {
     "",
     "IMPORTANT: Generate ONE photorealistic image of this person in this exact scene.",
     "The photo should look like a real photograph, not AI art.",
-    "Preserve the person's identity perfectly from the reference images.",
+    "Do NOT include any watermarks, logos, text overlays, or social media handles in the generated image.",
+    "",
+    "IDENTITY LOCK (HIGHEST PRIORITY):",
+    `The generated face MUST match the first ${opts.refCount} reference photo(s) EXACTLY.`,
+    "Same eyes, same nose, same lips, same face shape, same skin tone.",
+    "Do NOT blend, average, or mix facial features from ANY other source.",
+    "If there is ANY conflict between style and identity, ALWAYS prioritize identity.",
   ].join("\n");
 }
 
@@ -182,24 +177,78 @@ async function loadReferenceImages(
 }
 
 /**
+ * Analyze an inspiration image with Gemini Flash to extract style description as text.
+ * Two-step approach: avoids passing the inspiration image to the generation model,
+ * which prevents face bleed and watermark copying.
+ */
+async function analyzeInspirationImage(opts: {
+  apiKey: string;
+  image: { mimeType: string; data: string };
+}): Promise<string> {
+  const prompt = [
+    "Analyze this photo and describe the following elements in detail for recreation.",
+    "Do NOT describe the person's face or identity — only describe the style elements:",
+    "",
+    "1. COMPOSITION & FRAMING: Camera angle, distance, crop style, subject placement",
+    "2. LIGHTING: Direction, quality, color temperature, shadows, highlights",
+    "3. COLOR GRADING: Overall palette, warm/cool tones, contrast level, saturation",
+    "4. POSE STYLE: Body language energy, hand placement, weight distribution",
+    "5. ATMOSPHERE & MOOD: Overall vibe, feeling, aesthetic",
+    "6. SCENE/ENVIRONMENT: Location, setting, architectural elements, props",
+    "7. OUTFIT STYLE: Clothing category, color, fit, style",
+    "8. PHOTOGRAPHY STYLE: Phone vs professional, filter style, editing approach",
+    "",
+    "Output as a structured description for recreating this aesthetic with a different person.",
+  ].join("\n");
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${ANALYSIS_MODEL}:generateContent?key=${opts.apiKey}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(60_000),
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType: opts.image.mimeType, data: opts.image.data } },
+          ],
+        },
+      ],
+      generationConfig: { responseModalities: ["TEXT"] },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Inspiration analysis failed: ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error("Inspiration analysis returned no text.");
+  }
+  return text;
+}
+
+/**
  * Generate a single photo via Gemini API.
+ * Note: inspiration images are NOT passed here — they are pre-analyzed into text.
  */
 async function generateSinglePhoto(opts: {
   apiKey: string;
   prompt: string;
   refImages: Array<{ mimeType: string; data: string }>;
-  inspirationImages?: Array<{ mimeType: string; data: string }>;
   sceneImages?: Array<{ mimeType: string; data: string }>;
   outputDir: string;
   index: number;
 }): Promise<{ filePath: string; sizeKB: number } | { error: string }> {
-  // Order: prompt → person refs → inspiration refs → scene refs
+  // Order: prompt → person refs → scene refs (NO inspiration images)
   const parts: Array<Record<string, unknown>> = [
     { text: opts.prompt },
     ...opts.refImages.map((img) => ({
-      inlineData: { mimeType: img.mimeType, data: img.data },
-    })),
-    ...(opts.inspirationImages ?? []).map((img) => ({
       inlineData: { mimeType: img.mimeType, data: img.data },
     })),
     ...(opts.sceneImages ?? []).map((img) => ({
@@ -304,7 +353,7 @@ export default function register(api: OpenClawPluginApi) {
           '- "editorial" — fashion magazine quality, dramatic, cinematic',
           "",
           "## Workflow:",
-          "1. Call photoshoot_generate with referenceImages + location/sceneImages/inspirationImages + count",
+          "1. Call photoshoot_generate with referenceImages + location/sceneImages/inspirationImage + count",
           "2. Tool returns file paths for each generated photo",
           "3. Send each photo using the message tool with action='send', media=<path>",
           "",
@@ -335,14 +384,13 @@ export default function register(api: OpenClawPluginApi) {
                 "When provided, the person will be placed in the exact scene shown in these photos. " +
                 "Can be used with or without a text location description.",
             },
-            inspirationImages: {
-              type: "array",
-              items: { type: "string" },
+            inspirationImage: {
+              type: "string",
               description:
-                "Optional file paths to inspiration/style reference photos (1-3 images). " +
+                "Optional file path to ONE inspiration/style reference photo. " +
                 "抄作业: the generated photo will match the composition, lighting, color grading, " +
-                "pose style, and overall aesthetic of these photos. " +
-                "Face/identity comes from referenceImages, NOT from inspiration photos.",
+                "pose style, and overall aesthetic of this photo. " +
+                "Face/identity comes from referenceImages, NOT from the inspiration photo.",
             },
             count: {
               type: "number",
@@ -417,22 +465,17 @@ export default function register(api: OpenClawPluginApi) {
           }
           const hasSceneImages = scenePaths.length > 0;
 
-          // Load inspiration images if provided (抄作业)
-          const inspirationPaths = Array.isArray(params.inspirationImages)
-            ? (params.inspirationImages as string[])
-                .map((p) => (typeof p === "string" ? p.trim() : ""))
-                .filter(Boolean)
-            : [];
-          if (inspirationPaths.length > 3) {
-            throw new Error("Maximum 3 inspiration images allowed.");
-          }
-          for (const p of inspirationPaths) {
+          // Load inspiration image if provided (抄作业)
+          const inspirationPath =
+            typeof params.inspirationImage === "string" ? params.inspirationImage.trim() : "";
+          if (inspirationPath) {
             try {
-              await fs.access(p);
+              await fs.access(inspirationPath);
             } catch {
-              throw new Error(`Inspiration image not found: ${p}`);
+              throw new Error(`Inspiration image not found: ${inspirationPath}`);
             }
           }
+          const inspirationPaths = inspirationPath ? [inspirationPath] : [];
           const hasInspirationImages = inspirationPaths.length > 0;
 
           if (!location && !hasSceneImages && !hasInspirationImages) {
@@ -457,15 +500,27 @@ export default function register(api: OpenClawPluginApi) {
           }
 
           console.log(
-            `[photoshoot] starting: ${count} photos, ${validPaths.length} refs, ${inspirationPaths.length} inspiration, ${scenePaths.length} scene imgs, style=${style}, location="${(location || "custom scene").slice(0, 60)}"`,
+            `[photoshoot] starting: ${count} photos, ${validPaths.length} refs, inspiration=${hasInspirationImages ? "yes (two-step)" : "no"}, ${scenePaths.length} scene imgs, style=${style}, location="${(location || "custom scene").slice(0, 60)}"`,
           );
 
-          // Load reference images, inspiration images, and scene images
+          // Load reference images and scene images
           const refImages = await loadReferenceImages(validPaths);
-          const inspirationImages = hasInspirationImages
-            ? await loadReferenceImages(inspirationPaths)
-            : undefined;
           const sceneImages = hasSceneImages ? await loadReferenceImages(scenePaths) : undefined;
+
+          // Two-step inspiration flow: analyze inspiration image → text description
+          // This prevents face bleed and watermark copying from the inspiration image
+          let inspirationStyleDescription: string | undefined;
+          if (hasInspirationImages) {
+            console.log("[photoshoot] analyzing inspiration image with Gemini Flash...");
+            const inspoImage = (await loadReferenceImages(inspirationPaths))[0];
+            inspirationStyleDescription = await analyzeInspirationImage({
+              apiKey,
+              image: inspoImage,
+            });
+            console.log(
+              `[photoshoot] inspiration analysis complete (${inspirationStyleDescription.length} chars)`,
+            );
+          }
 
           await fs.mkdir(outputDir, { recursive: true });
 
@@ -486,7 +541,7 @@ export default function register(api: OpenClawPluginApi) {
             const prompt = buildPrompt({
               location: location || undefined,
               hasCustomSceneImages: hasSceneImages,
-              hasInspirationImages: hasInspirationImages,
+              inspirationStyleDescription,
               sceneDescription: location || undefined,
               pose,
               style,
@@ -499,7 +554,6 @@ export default function register(api: OpenClawPluginApi) {
               apiKey,
               prompt,
               refImages,
-              inspirationImages,
               sceneImages,
               outputDir,
               index: i,
