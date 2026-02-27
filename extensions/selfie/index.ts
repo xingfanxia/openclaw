@@ -31,6 +31,9 @@ function buildPrompt(scenePrompt: string, style: SelfieStyle): string {
     "eyes, nose, lips, face shape, skin tone, and hair.",
     "Skin quality should look well-maintained and clear from consistent skincare: natural texture is fine,",
     "but avoid obvious acne clusters, inflamed red breakouts, or prominent irritation patches on the face.",
+    "BLUSH/REDNESS: keep cheek color minimal and natural — at most a very faint, soft pink flush.",
+    "Do NOT paint heavy rosy/red patches on the cheeks; it looks like sunburn or allergic reaction, not cute.",
+    "Her skin tone is even and clear, not ruddy. If the scene is warm/post-workout, a subtle healthy glow is fine but no bright red cheeks.",
   ];
 
   const body = [
