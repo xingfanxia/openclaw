@@ -24,7 +24,7 @@ All skills-related configuration lives under `skills` in `~/.openclaw/openclaw.j
       nodeManager: "npm", // npm | pnpm | yarn | bun (Gateway runtime still Node; bun not recommended)
     },
     entries: {
-      "nano-banana-pro": {
+      "nano-banana": {
         enabled: true,
         apiKey: "GEMINI_KEY_HERE",
         env: {

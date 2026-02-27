@@ -80,7 +80,7 @@ that up as `<workspace>/skills` on the next session.
 
 ```markdown
 ---
-name: nano-banana-pro
+name: nano-banana
 description: Generate or edit images via Gemini 3 Pro Image
 ---
 ```
@@ -108,7 +108,7 @@ OpenClaw **filters skills at load time** using `metadata` (single-line JSON):
 
 ```markdown
 ---
-name: nano-banana-pro
+name: nano-banana
 description: Generate or edit images via Gemini 3 Pro Image
 metadata:
   {
@@ -193,7 +193,7 @@ Bundled/managed skills can be toggled and supplied with env values:
 {
   skills: {
     entries: {
-      "nano-banana-pro": {
+      "nano-banana": {
         enabled: true,
         apiKey: "GEMINI_KEY_HERE",
         env: {

@@ -73,7 +73,7 @@ ClawHub 是 OpenClaw 的公共 Skills 注册表。浏览 https://clawhub.com。�
 
 ```markdown
 ---
-name: nano-banana-pro
+name: nano-banana
 description: Generate or edit images via Gemini 3 Pro Image
 ---
 ```
@@ -101,7 +101,7 @@ OpenClaw 使用 `metadata`（单行 JSON）**在加载时过滤 Skills**：
 
 ```markdown
 ---
-name: nano-banana-pro
+name: nano-banana
 description: Generate or edit images via Gemini 3 Pro Image
 metadata:
   {
@@ -178,7 +178,7 @@ metadata:
 {
   skills: {
     entries: {
-      "nano-banana-pro": {
+      "nano-banana": {
         enabled: true,
         apiKey: "GEMINI_KEY_HERE",
         env: {

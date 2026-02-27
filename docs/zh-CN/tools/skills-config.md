@@ -31,7 +31,7 @@ x-i18n:
       nodeManager: "npm", // npm | pnpm | yarn | bun（Gateway 网关运行时仍为 Node；不推荐 bun）
     },
     entries: {
-      "nano-banana-pro": {
+      "nano-banana": {
         enabled: true,
         apiKey: "GEMINI_KEY_HERE",
         env: {

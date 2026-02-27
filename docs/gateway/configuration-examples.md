@@ -426,7 +426,7 @@ Save to `~/.openclaw/openclaw.json` and you can DM the bot from that number.
       nodeManager: "npm",
     },
     entries: {
-      "nano-banana-pro": {
+      "nano-banana": {
         enabled: true,
         apiKey: "GEMINI_KEY_HERE",
         env: { GEMINI_API_KEY: "GEMINI_KEY_HERE" },

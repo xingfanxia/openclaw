@@ -2748,7 +2748,7 @@ Z.AI 模型通过内置的 `zai` 提供商提供。在环境中设置 `ZAI_API_K
 
 - `enabled`：设为 `false` 禁用 Skills，即使它是内置/已安装的。
 - `env`：为智能体运行注入的环境变量（仅在尚未设置时）。
-- `apiKey`：对于声明了主环境变量的 Skills 的可选便利字段（例如 `nano-banana-pro` → `GEMINI_API_KEY`）。
+- `apiKey`：对于声明了主环境变量的 Skills 的可选便利字段（例如 `nano-banana` → `GEMINI_API_KEY`）。
 
 示例：
 
@@ -2764,7 +2764,7 @@ Z.AI 模型通过内置的 `zai` 提供商提供。在环境中设置 `ZAI_API_K
       nodeManager: "npm",
     },
     entries: {
-      "nano-banana-pro": {
+      "nano-banana": {
         apiKey: "GEMINI_KEY_HERE",
         env: {
           GEMINI_API_KEY: "GEMINI_KEY_HERE",
