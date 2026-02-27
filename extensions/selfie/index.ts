@@ -8,6 +8,9 @@ import type { OpenClawPluginApi } from "../../src/plugins/types.js";
 type PluginCfg = {
   geminiApiKey?: string;
   outputDir?: string;
+  proactiveSelfie?: {
+    probability?: number;
+  };
 };
 
 const MODEL = "gemini-3-pro-image-preview";
@@ -123,6 +126,24 @@ export default function register(api: OpenClawPluginApi) {
       refImagesPromise = loadReferenceImages(extDir);
     }
     return refImagesPromise;
+  }
+
+  // Probabilistic selfie: inject a selfie hint into ~N% of regular messages
+  const selfieProb = cfg.proactiveSelfie?.probability ?? 0;
+  if (selfieProb > 0) {
+    api.on(
+      "before_agent_start",
+      (_event, _ctx) => {
+        if (Math.random() >= selfieProb) return;
+        return {
+          prependContext: [
+            "在回复这条消息之后，如果对话氛围合适，用 image_generate 发一张自拍。",
+            "参考SOUL.md里「小猪猪的一天」时间表来决定场景和穿着。不要强行发，只在自然的时候发。",
+          ].join("\n"),
+        };
+      },
+      { priority: 10 },
+    );
   }
 
   api.registerTool(

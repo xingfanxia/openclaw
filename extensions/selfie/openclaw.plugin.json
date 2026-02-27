@@ -13,6 +13,18 @@
       "outputDir": {
         "type": "string",
         "description": "Directory to save generated images. Default: /tmp/openclaw-selfies"
+      },
+      "proactiveSelfie": {
+        "type": "object",
+        "description": "Probabilistic selfie on regular messages (not just heartbeat).",
+        "properties": {
+          "probability": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Probability (0-1) of injecting a selfie hint per message. 0 = disabled."
+          }
+        }
       }
     }
   }
