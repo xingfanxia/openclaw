@@ -22,7 +22,7 @@ export type AgentModelListConfig = {
 };
 
 export type AgentContextPruningConfig = {
-  mode?: "off" | "cache-ttl";
+  mode?: "off" | "cache-ttl" | "always";
   /** TTL to consider cache expired (duration string, default unit: minutes). */
   ttl?: string;
   keepLastAssistants?: number;
@@ -39,6 +39,11 @@ export type AgentContextPruningConfig = {
     tailChars?: number;
   };
   hardClear?: {
+    enabled?: boolean;
+    placeholder?: string;
+  };
+  /** Strip image blocks from old messages before pruning (reduces base64 bloat). */
+  imageStrip?: {
     enabled?: boolean;
     placeholder?: string;
   };
@@ -229,6 +234,10 @@ export type AgentDefaultsConfig = {
     ackMaxChars?: number;
     /** Suppress tool error warning payloads during heartbeat runs. */
     suppressToolErrorWarnings?: boolean;
+    /** Max user turns to keep in heartbeat context (default: 20). Limits context size when heartbeat shares the main session. */
+    historyLimit?: number;
+    /** Strip tool calls/results/thinking from heartbeat context (default: true). Keeps only chat text. */
+    stripToolHistory?: boolean;
     /**
      * When enabled, deliver the model's reasoning payload for heartbeat runs (when available)
      * as a separate message prefixed with `Reasoning:` (same as `/reasoning on`).

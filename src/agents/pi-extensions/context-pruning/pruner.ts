@@ -96,6 +96,32 @@ function hasImageBlocks(content: ReadonlyArray<TextContent | ImageContent>): boo
   return false;
 }
 
+/**
+ * Replace all image content blocks with a text placeholder. Returns null if
+ * no image blocks were found (message unchanged).
+ */
+function stripImagesFromMessage(msg: AgentMessage, placeholder: string): AgentMessage | null {
+  if (msg.role === "toolResult") {
+    if (!hasImageBlocks(msg.content)) {
+      return null;
+    }
+    const newContent = msg.content.map((block) =>
+      block.type === "image" ? asText(placeholder) : block,
+    );
+    return { ...msg, content: newContent } as unknown as AgentMessage;
+  }
+  if (msg.role === "user" && typeof msg.content !== "string") {
+    if (!hasImageBlocks(msg.content)) {
+      return null;
+    }
+    const newContent = msg.content.map((block) =>
+      block.type === "image" ? asText(placeholder) : block,
+    );
+    return { ...msg, content: newContent };
+  }
+  return null;
+}
+
 function estimateTextAndImageChars(content: ReadonlyArray<TextContent | ImageContent>): number {
   let chars = 0;
   for (const block of content) {
@@ -187,10 +213,6 @@ function softTrimToolResultMessage(params: {
   settings: EffectiveContextPruningSettings;
 }): ToolResultMessage | null {
   const { msg, settings } = params;
-  // Ignore image tool results for now: these are often directly relevant and hard to partially prune safely.
-  if (hasImageBlocks(msg.content)) {
-    return null;
-  }
 
   const parts = collectTextSegments(msg.content);
   const rawLen = estimateJoinedTextLength(parts);
@@ -253,24 +275,48 @@ export function pruneContextMessages(params: {
 
   const isToolPrunable = params.isToolPrunable ?? makeToolPrunablePredicate(settings.tools);
 
-  const totalCharsBefore = estimateContextChars(messages);
+  let next: AgentMessage[] | null = null;
+
+  // --- Pass 0: Strip image blocks from old messages (before soft-trim/hard-clear). ---
+  // This replaces base64 image payloads with a tiny text placeholder, dramatically reducing
+  // context size for sessions that accumulate inline images over many turns.
+  if (settings.imageStrip?.enabled) {
+    for (let i = pruneStartIndex; i < cutoffIndex; i++) {
+      const msg = (next ?? messages)[i];
+      if (!msg) {
+        continue;
+      }
+      const stripped = stripImagesFromMessage(msg, settings.imageStrip.placeholder);
+      if (stripped) {
+        if (!next) {
+          next = messages.slice();
+        }
+        next[i] = stripped;
+      }
+    }
+  }
+
+  const source = next ?? messages;
+  const totalCharsBefore = estimateContextChars(source);
   let totalChars = totalCharsBefore;
   let ratio = totalChars / charWindow;
   if (ratio < settings.softTrimRatio) {
-    return messages;
+    return source;
   }
 
+  // --- Pass 1: Soft-trim large tool results. ---
   const prunableToolIndexes: number[] = [];
-  let next: AgentMessage[] | null = null;
 
   for (let i = pruneStartIndex; i < cutoffIndex; i++) {
-    const msg = messages[i];
+    const msg = (next ?? messages)[i];
     if (!msg || msg.role !== "toolResult") {
       continue;
     }
     if (!isToolPrunable(msg.toolName)) {
       continue;
     }
+    // After image-strip pass, image blocks have been replaced with text, so we can
+    // now prune these messages. Skip only if images remain (imageStrip disabled).
     if (hasImageBlocks(msg.content)) {
       continue;
     }
@@ -293,6 +339,7 @@ export function pruneContextMessages(params: {
     next[i] = updated as unknown as AgentMessage;
   }
 
+  // --- Pass 2: Hard-clear tool results when ratio still exceeds threshold. ---
   const outputAfterSoftTrim = next ?? messages;
   ratio = totalChars / charWindow;
   if (ratio < settings.hardClearRatio) {

@@ -827,15 +827,28 @@ export async function runEmbeddedAttempt(
         const validated = transcriptPolicy.validateAnthropicTurns
           ? validateAnthropicTurns(validatedGemini)
           : validatedGemini;
+        // Heartbeat runs share the main session but only need recent chat context.
+        // Apply heartbeat-specific limits before the general DM limits.
+        const isHeartbeatRun = runtimeChannel === "heartbeat";
+        const heartbeatCfg = isHeartbeatRun
+          ? params.config?.agents?.defaults?.heartbeat
+          : undefined;
+        const heartbeatHistoryLimit =
+          heartbeatCfg?.historyLimit ?? (isHeartbeatRun ? 20 : undefined);
+        const heartbeatStripTools = heartbeatCfg?.stripToolHistory ?? isHeartbeatRun;
+
         const truncated = limitHistoryTurns(
           validated,
-          getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
+          heartbeatHistoryLimit ??
+            getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
         );
-        // Strip tool calls/results/thinking from DM history when configured,
+        // Strip tool calls/results/thinking from history when configured,
         // reducing token usage by keeping only chat text.
-        const stripped = getDmStripToolHistoryFromSessionKey(params.sessionKey, params.config)
-          ? stripToolHistoryFromMessages(truncated)
-          : truncated;
+        const stripped =
+          heartbeatStripTools ||
+          getDmStripToolHistoryFromSessionKey(params.sessionKey, params.config)
+            ? stripToolHistoryFromMessages(truncated)
+            : truncated;
         // Re-run tool_use/tool_result pairing repair after truncation, since
         // limitHistoryTurns can orphan tool_result blocks by removing the
         // assistant message that contained the matching tool_use.

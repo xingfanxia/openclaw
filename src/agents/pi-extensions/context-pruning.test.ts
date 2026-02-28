@@ -381,7 +381,7 @@ describe("context-pruning", () => {
     expect(toolText(findToolResult(next, "t2"))).toContain("y".repeat(20_000));
   });
 
-  it("skips tool results that contain images (no soft trim, no hard clear)", () => {
+  it("strips images from old tool results and makes them eligible for pruning", () => {
     const messages: AgentMessage[] = [
       makeUser("u1"),
       makeImageToolResult({
@@ -397,6 +397,61 @@ describe("context-pruning", () => {
     if (!tool || tool.role !== "toolResult") {
       throw new Error("unexpected pruned message list shape");
     }
+    // Image blocks should be gone after stripping + pruning.
+    expect(tool.content.some((b) => b.type === "image")).toBe(false);
+    // The tool result should have been hard-cleared (images stripped first, then eligible for pruning).
+    expect(toolText(tool)).toBe("[cleared]");
+  });
+
+  it("strips images but preserves image placeholder text in content", () => {
+    const messages: AgentMessage[] = [
+      makeUser("u1"),
+      makeImageToolResult({
+        toolCallId: "t1",
+        toolName: "exec",
+        text: "short text",
+      }),
+      makeAssistant("a1"),
+      makeAssistant("a2"),
+    ];
+
+    // softTrimRatio high so no soft-trimming, only image stripping.
+    const next = pruneWithAggressiveDefaults(messages, {
+      keepLastAssistants: 2,
+      softTrimRatio: 10.0,
+      hardClearRatio: 10.0,
+    });
+
+    const tool = findToolResult(next, "t1");
+    if (!tool || tool.role !== "toolResult") {
+      throw new Error("unexpected pruned message list shape");
+    }
+    expect(tool.content.some((b) => b.type === "image")).toBe(false);
+    expect(
+      tool.content.some((b) => b.type === "text" && b.text === "[Image removed from context]"),
+    ).toBe(true);
+    expect(toolText(tool)).toContain("[Image removed from context]");
+  });
+
+  it("skips image stripping when imageStrip is disabled", () => {
+    const messages: AgentMessage[] = [
+      makeUser("u1"),
+      makeImageToolResult({
+        toolCallId: "t1",
+        toolName: "exec",
+        text: "x".repeat(20_000),
+      }),
+    ];
+
+    const next = pruneWithAggressiveDefaults(messages, {
+      imageStrip: { enabled: false, placeholder: "[stripped]" },
+    });
+
+    const tool = findToolResult(next, "t1");
+    if (!tool || tool.role !== "toolResult") {
+      throw new Error("unexpected pruned message list shape");
+    }
+    // Images should still be present since stripping is disabled.
     expect(tool.content.some((b) => b.type === "image")).toBe(true);
     expect(toolText(tool)).toContain("x".repeat(20_000));
   });
@@ -448,5 +503,102 @@ describe("context-pruning", () => {
     expect(text).toContain("abcdef");
     expect(text).toContain("efghij");
     expect(text).toContain("[Tool result trimmed:");
+  });
+
+  it("'always' mode registers without provider check", () => {
+    const settings = computeEffectiveSettings({ mode: "always" });
+    expect(settings).not.toBeNull();
+    expect(settings!.mode).toBe("always");
+  });
+
+  it("'always' mode runs pruner on every context event (no TTL gating)", () => {
+    const sessionManager = {};
+
+    setContextPruningRuntime(sessionManager, {
+      settings: makeAggressiveSettings({ mode: "always" }),
+      contextWindowTokens: 1000,
+      isToolPrunable: () => true,
+      lastCacheTouchAt: null,
+    });
+
+    const messages: AgentMessage[] = [
+      makeUser("u1"),
+      makeAssistant("a1"),
+      makeToolResult({
+        toolCallId: "t1",
+        toolName: "exec",
+        text: "x".repeat(20_000),
+      }),
+      makeAssistant("a2"),
+    ];
+
+    const handler = createContextHandler();
+
+    // First call should prune.
+    const first = runContextHandler(handler, messages, sessionManager);
+    expect(first).toBeDefined();
+    expect(toolText(findToolResult(first!.messages, "t1"))).toBe("[cleared]");
+
+    // Second call should also prune (no TTL cooldown).
+    const second = runContextHandler(handler, messages, sessionManager);
+    expect(second).toBeDefined();
+  });
+
+  it("strips images from user messages in the prunable window", () => {
+    const imageUser: AgentMessage = {
+      role: "user",
+      content: [
+        { type: "image", data: "AA==", mimeType: "image/png" },
+        { type: "text", text: "describe this" },
+      ],
+      timestamp: Date.now(),
+    };
+    const messages: AgentMessage[] = [
+      makeUser("u0"),
+      imageUser,
+      makeAssistant("a1"),
+      makeUser("u2"),
+      makeAssistant("a2"),
+    ];
+
+    const next = pruneWithAggressiveDefaults(messages, { keepLastAssistants: 1 });
+
+    // The image in the old user message should be replaced with placeholder.
+    const stripped = next[1];
+    if (!stripped || stripped.role !== "user" || typeof stripped.content === "string") {
+      throw new Error("expected user message with content blocks");
+    }
+    expect(stripped.content.some((b) => b.type === "image")).toBe(false);
+    expect(
+      stripped.content.some(
+        (b) => b.type === "text" && b.text.includes("[Image removed from context]"),
+      ),
+    ).toBe(true);
+  });
+
+  it("retains images within keepLastAssistants tail", () => {
+    const imageUser: AgentMessage = {
+      role: "user",
+      content: [
+        { type: "image", data: "AA==", mimeType: "image/png" },
+        { type: "text", text: "describe this" },
+      ],
+      timestamp: Date.now(),
+    };
+    const messages: AgentMessage[] = [
+      makeUser("u0"),
+      makeAssistant("a1"),
+      imageUser,
+      makeAssistant("a2"),
+    ];
+
+    // keepLastAssistants=2 means a2 and a1 are protected, so the imageUser (between them) is in the tail.
+    const next = pruneWithAggressiveDefaults(messages, { keepLastAssistants: 2 });
+
+    const preserved = next[2];
+    if (!preserved || preserved.role !== "user" || typeof preserved.content === "string") {
+      throw new Error("expected user message with content blocks");
+    }
+    expect(preserved.content.some((b) => b.type === "image")).toBe(true);
   });
 });

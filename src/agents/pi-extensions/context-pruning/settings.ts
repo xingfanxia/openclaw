@@ -4,7 +4,7 @@ export type ContextPruningToolMatch = {
   allow?: string[];
   deny?: string[];
 };
-export type ContextPruningMode = "off" | "cache-ttl";
+export type ContextPruningMode = "off" | "cache-ttl" | "always";
 
 export type ContextPruningConfig = {
   mode?: ContextPruningMode;
@@ -21,6 +21,10 @@ export type ContextPruningConfig = {
     tailChars?: number;
   };
   hardClear?: {
+    enabled?: boolean;
+    placeholder?: string;
+  };
+  imageStrip?: {
     enabled?: boolean;
     placeholder?: string;
   };
@@ -43,6 +47,10 @@ export type EffectiveContextPruningSettings = {
     enabled: boolean;
     placeholder: string;
   };
+  imageStrip: {
+    enabled: boolean;
+    placeholder: string;
+  };
 };
 
 export const DEFAULT_CONTEXT_PRUNING_SETTINGS: EffectiveContextPruningSettings = {
@@ -62,6 +70,10 @@ export const DEFAULT_CONTEXT_PRUNING_SETTINGS: EffectiveContextPruningSettings =
     enabled: true,
     placeholder: "[Old tool result content cleared]",
   },
+  imageStrip: {
+    enabled: true,
+    placeholder: "[Image removed from context]",
+  },
 };
 
 export function computeEffectiveSettings(raw: unknown): EffectiveContextPruningSettings | null {
@@ -69,7 +81,7 @@ export function computeEffectiveSettings(raw: unknown): EffectiveContextPruningS
     return null;
   }
   const cfg = raw as ContextPruningConfig;
-  if (cfg.mode !== "cache-ttl") {
+  if (cfg.mode !== "cache-ttl" && cfg.mode !== "always") {
     return null;
   }
 
@@ -116,6 +128,14 @@ export function computeEffectiveSettings(raw: unknown): EffectiveContextPruningS
     }
     if (typeof cfg.hardClear.placeholder === "string" && cfg.hardClear.placeholder.trim()) {
       s.hardClear.placeholder = cfg.hardClear.placeholder.trim();
+    }
+  }
+  if (cfg.imageStrip) {
+    if (typeof cfg.imageStrip.enabled === "boolean") {
+      s.imageStrip.enabled = cfg.imageStrip.enabled;
+    }
+    if (typeof cfg.imageStrip.placeholder === "string" && cfg.imageStrip.placeholder.trim()) {
+      s.imageStrip.placeholder = cfg.imageStrip.placeholder.trim();
     }
   }
 
