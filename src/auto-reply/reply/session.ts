@@ -42,6 +42,7 @@ import { resolveCommandAuthorization } from "../command-auth.js";
 import type { MsgContext, TemplateContext } from "../templating.js";
 import { normalizeInboundTextNewlines } from "./inbound-text.js";
 import { stripMentions, stripStructuralPrefixes } from "./mentions.js";
+import { seedSessionFromPrevious } from "./session-seed.js";
 
 const log = createSubsystemLogger("session-init");
 
@@ -461,6 +462,18 @@ export async function initSessionState(params: {
         }),
     },
   );
+
+  // Seed new session with recent chat from old session.
+  if (isNewSession && previousSessionEntry?.sessionFile && sessionEntry.sessionFile) {
+    const carryOver = resetPolicy.carryOverMessages ?? 50;
+    if (carryOver > 0) {
+      seedSessionFromPrevious({
+        oldSessionFile: previousSessionEntry.sessionFile,
+        newSessionFile: sessionEntry.sessionFile,
+        messageCount: carryOver,
+      });
+    }
+  }
 
   // Archive old transcript so it doesn't accumulate on disk (#14869).
   if (previousSessionEntry?.sessionId) {
