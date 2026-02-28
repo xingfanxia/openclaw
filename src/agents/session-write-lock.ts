@@ -512,7 +512,12 @@ export async function acquireSessionWriteLock(params: {
       // When inspectLockPayload says the lock is NOT stale (pid alive, age OK),
       // double-check on Linux that the PID hasn't been recycled by comparing startTime.
       let recycledPid = false;
-      if (!inspected.stale && inspected.pidAlive && inspected.pid != null && process.platform === "linux") {
+      if (
+        !inspected.stale &&
+        inspected.pidAlive &&
+        inspected.pid != null &&
+        process.platform === "linux"
+      ) {
         const currentStartTime = readLinuxStartTime(inspected.pid);
         if (currentStartTime != null) {
           if (typeof payload?.startTime === "number" && Number.isFinite(payload.startTime)) {
@@ -526,7 +531,10 @@ export async function acquireSessionWriteLock(params: {
           }
         }
       }
-      if (recycledPid || await shouldReclaimContendedLockFile(lockPath, inspected, staleMs, nowMs)) {
+      if (
+        recycledPid ||
+        (await shouldReclaimContendedLockFile(lockPath, inspected, staleMs, nowMs))
+      ) {
         await fs.rm(lockPath, { force: true });
         continue;
       }

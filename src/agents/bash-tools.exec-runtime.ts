@@ -210,7 +210,6 @@ function isBenignSearchNoMatchExit(params: { command: string; code: number | nul
   return primaryToken === "grep" || primaryToken === "rg";
 }
 
-
 export function applyShellPath(env: Record<string, string>, shellPath?: string | null) {
   if (!shellPath) {
     return;
@@ -518,7 +517,8 @@ export async function runExecProcess(opts: {
           command: opts.command,
           code: exit.exitCode,
         });
-      const status: "completed" | "failed" = isNormalExit || treatAsNoMatchSuccess ? "completed" : "failed";
+      const status: "completed" | "failed" =
+        isNormalExit || treatAsNoMatchSuccess ? "completed" : "failed";
 
       markExited(session, exit.exitCode, exit.exitSignal, status);
       maybeNotifyOnExit(session, status);

@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { writeFileSync, readFileSync, existsSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 /**
  * OpenAI Codex OAuth Login
  *
@@ -12,9 +15,6 @@
  * After login, set your model to: openai-codex/gpt-5.3-codex
  */
 import { loginOpenAICodex, refreshOpenAICodexToken } from "@mariozechner/pi-ai";
-import { writeFileSync, readFileSync, existsSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
 
 const PROFILE_ID = "openai-codex:default";
 const profilesPath = join(homedir(), ".openclaw", "auth-profiles.json");
