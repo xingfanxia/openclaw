@@ -66,6 +66,19 @@
 - Format fix: `pnpm format:fix` (oxfmt --write)
 - Tests: `pnpm test` (vitest); coverage: `pnpm test:coverage`
 
+## Docker Gateway Build & Deploy
+
+- Image: `OPENCLAW_IMAGE` env var (default `openclaw:local`). Compose uses `docker-compose.yml` + `docker-compose.override.yml`.
+- Build: `docker build -t openclaw:local .` (from repo root). Use `--no-cache` when lockfile/workspace packages changed to bust the `pnpm install` layer.
+- Deploy: `docker compose down openclaw-gateway && docker compose up -d openclaw-gateway`.
+- Runtime patches: `bash ~/openclaw/patch-cron-timeout.sh` after container starts (survives restarts but NOT `down/up`).
+- Config lives in mounted volume (`~/.openclaw/openclaw.json`), persists across container recreations.
+- Config changes: `docker exec openclaw-openclaw-gateway-1 npx openclaw config set <key> <value>`, then restart gateway.
+- Hot reload (config-only): `docker exec openclaw-openclaw-gateway-1 kill -USR1 1` (reloads config + plugins without full container restart).
+- Adding extensions: extension must be in repo + `pnpm-lock.yaml` before build. After build, enable with `openclaw plugins enable <id>` and add config.
+- Logs: `docker logs openclaw-openclaw-gateway-1` (startup/plugin registration). Debug: `/tmp/openclaw/openclaw-YYYY-MM-DD.log` inside container.
+- LiteLLM proxy: separate container `openclaw-litellm-proxy`. Config: `~/openclaw/litellm-config.yaml`.
+
 ## Coding Style & Naming Conventions
 
 - Language: TypeScript (ESM). Prefer strict typing; avoid `any`.
