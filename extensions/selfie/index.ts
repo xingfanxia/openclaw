@@ -117,7 +117,10 @@ async function loadReferenceImages(
 
 export default function register(api: OpenClawPluginApi) {
   const cfg = (api.pluginConfig ?? {}) as PluginCfg;
-  const outputDir = cfg.outputDir || "/tmp/openclaw-selfies";
+  const workspaceMediaDir = api.workspaceDir
+    ? path.join(api.workspaceDir, "media", "selfies")
+    : undefined;
+  const outputDir = cfg.outputDir || workspaceMediaDir || "/tmp/openclaw-selfies";
 
   // Resolve extension directory for reference images
   const extDir = path.dirname(fileURLToPath(import.meta.url));

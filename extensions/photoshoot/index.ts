@@ -323,7 +323,10 @@ async function generateSinglePhoto(opts: {
 
 export default function register(api: OpenClawPluginApi) {
   const cfg = (api.pluginConfig ?? {}) as PluginCfg;
-  const outputDir = cfg.outputDir || "/tmp/openclaw-photoshoot";
+  const workspaceMediaDir = api.workspaceDir
+    ? path.join(api.workspaceDir, "media", "photoshoot")
+    : undefined;
+  const outputDir = cfg.outputDir || workspaceMediaDir || "/tmp/openclaw-photoshoot";
 
   api.registerTool(
     (_ctx) => {
