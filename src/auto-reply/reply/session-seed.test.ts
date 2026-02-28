@@ -2,11 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  readRecentChatMessages,
-  seedSessionFromPrevious,
-  writeSeedContext,
-} from "./session-seed.js";
+import { buildSeedContextPrefix, readRecentChatMessages } from "./session-seed.js";
 
 describe("session-seed", () => {
   let tmpDir: string;
@@ -142,91 +138,64 @@ describe("session-seed", () => {
     });
   });
 
-  describe("writeSeedContext", () => {
-    it("writes a valid JSONL entry with seed markers", () => {
-      const file = path.join(tmpDir, "new-session.jsonl");
-      // Create file with header first
-      writeJsonl(file, [{ type: "session", id: "new-id" }]);
-
-      writeSeedContext(file, "User: Hello\n\nAssistant: Hi there", 50);
-
-      const content = fs.readFileSync(file, "utf-8");
-      const lines = content.trim().split("\n");
-      expect(lines).toHaveLength(2);
-
-      const seedEntry = JSON.parse(lines[1]);
-      expect(seedEntry.type).toBe("message");
-      expect(seedEntry.provenance).toBe("session-seed");
-      expect(seedEntry.message.role).toBe("user");
-      expect(seedEntry.message.content).toContain("[Previous session context — last 50 messages]");
-      expect(seedEntry.message.content).toContain("User: Hello");
-      expect(seedEntry.message.content).toContain("Assistant: Hi there");
-      expect(seedEntry.message.content).toContain(
-        "[End of previous session context. Continue the conversation naturally.]",
-      );
-    });
-  });
-
-  describe("seedSessionFromPrevious", () => {
-    it("seeds new session with messages from old session", () => {
-      const oldFile = path.join(tmpDir, "old.jsonl");
-      const newFile = path.join(tmpDir, "new.jsonl");
-
-      writeJsonl(oldFile, [
+  describe("buildSeedContextPrefix", () => {
+    it("returns formatted string with seed markers for valid session", () => {
+      const file = path.join(tmpDir, "old.jsonl");
+      writeJsonl(file, [
         { type: "session", id: "old-id" },
         makeMessage("user", "What's your name?"),
         makeMessage("assistant", "I'm an AI assistant."),
         makeMessage("user", "Tell me a joke"),
         makeMessage("assistant", "Why did the chicken cross the road?"),
       ]);
-      writeJsonl(newFile, [{ type: "session", id: "new-id" }]);
 
-      seedSessionFromPrevious({
-        oldSessionFile: oldFile,
-        newSessionFile: newFile,
+      const result = buildSeedContextPrefix({
+        oldSessionFile: file,
         messageCount: 50,
       });
 
-      const content = fs.readFileSync(newFile, "utf-8");
-      const lines = content.trim().split("\n");
-      expect(lines).toHaveLength(2);
-
-      const seedEntry = JSON.parse(lines[1]);
-      expect(seedEntry.message.content).toContain("What's your name?");
-      expect(seedEntry.message.content).toContain("Tell me a joke");
+      expect(result).not.toBeNull();
+      expect(result).toContain("[Previous session context — last 50 messages]");
+      expect(result).toContain("User: What's your name?");
+      expect(result).toContain("Assistant: I'm an AI assistant.");
+      expect(result).toContain("User: Tell me a joke");
+      expect(result).toContain("Assistant: Why did the chicken cross the road?");
+      expect(result).toContain(
+        "[End of previous session context. Continue the conversation naturally.]",
+      );
     });
 
-    it("does nothing when count is 0", () => {
-      const oldFile = path.join(tmpDir, "old.jsonl");
-      const newFile = path.join(tmpDir, "new.jsonl");
+    it("returns null when count is 0", () => {
+      const file = path.join(tmpDir, "old.jsonl");
+      writeJsonl(file, [makeMessage("user", "Hello")]);
 
-      writeJsonl(oldFile, [makeMessage("user", "Hello")]);
-      writeJsonl(newFile, [{ type: "session", id: "new-id" }]);
-
-      seedSessionFromPrevious({
-        oldSessionFile: oldFile,
-        newSessionFile: newFile,
+      const result = buildSeedContextPrefix({
+        oldSessionFile: file,
         messageCount: 0,
       });
 
-      const content = fs.readFileSync(newFile, "utf-8");
-      const lines = content.trim().split("\n");
-      expect(lines).toHaveLength(1);
+      expect(result).toBeNull();
     });
 
-    it("does nothing when old file doesn't exist", () => {
-      const newFile = path.join(tmpDir, "new.jsonl");
-      writeJsonl(newFile, [{ type: "session", id: "new-id" }]);
-
-      seedSessionFromPrevious({
+    it("returns null when old file doesn't exist", () => {
+      const result = buildSeedContextPrefix({
         oldSessionFile: "/nonexistent.jsonl",
-        newSessionFile: newFile,
         messageCount: 50,
       });
 
-      const content = fs.readFileSync(newFile, "utf-8");
-      const lines = content.trim().split("\n");
-      expect(lines).toHaveLength(1);
+      expect(result).toBeNull();
+    });
+
+    it("returns null when session has no chat messages", () => {
+      const file = path.join(tmpDir, "empty.jsonl");
+      writeJsonl(file, [{ type: "session", id: "empty-id" }]);
+
+      const result = buildSeedContextPrefix({
+        oldSessionFile: file,
+        messageCount: 50,
+      });
+
+      expect(result).toBeNull();
     });
   });
 });

@@ -4,8 +4,6 @@ import { hasInterSessionUserProvenance } from "../../sessions/input-provenance.j
 
 const log = createSubsystemLogger("session-seed");
 
-const DEFAULT_CARRY_OVER = 50;
-
 /**
  * Read recent user/assistant text messages from a session JSONL transcript.
  * Skips tool calls, tool results, thinking blocks, images, and inter-session
@@ -73,60 +71,29 @@ export function readRecentChatMessages(sessionFilePath: string, count: number): 
 }
 
 /**
- * Write a seed context block into a new session file as a user message.
- * The seed is wrapped in markers so the agent knows it's carried-over context.
+ * Build a seed context prefix string from the old session's recent chat messages.
+ * Returns null if no messages are available or the old session file is missing.
  */
-export function writeSeedContext(
-  newSessionFilePath: string,
-  formattedMessages: string,
-  count: number,
-): void {
-  const seedText =
-    `[Previous session context — last ${count} messages]\n\n` +
-    `${formattedMessages}\n\n` +
-    `[End of previous session context. Continue the conversation naturally.]`;
-
-  const entry = {
-    type: "message",
-    message: {
-      role: "user",
-      content: seedText,
-    },
-    provenance: "session-seed",
-  };
-
-  fs.appendFileSync(newSessionFilePath, `${JSON.stringify(entry)}\n`, "utf-8");
-}
-
-/**
- * Seed a new session file with recent chat messages from the old session.
- */
-export function seedSessionFromPrevious(params: {
+export function buildSeedContextPrefix(params: {
   oldSessionFile: string;
-  newSessionFile: string;
-  messageCount?: number;
-}): void {
-  const count = params.messageCount ?? DEFAULT_CARRY_OVER;
+  messageCount: number;
+}): string | null {
+  const count = params.messageCount;
   if (count <= 0) {
-    return;
+    return null;
   }
   if (!params.oldSessionFile || !fs.existsSync(params.oldSessionFile)) {
     log.warn("old session file not found, skipping seed");
-    return;
+    return null;
   }
-  if (!params.newSessionFile) {
-    log.warn("new session file not specified, skipping seed");
-    return;
-  }
-
   const formatted = readRecentChatMessages(params.oldSessionFile, count);
   if (!formatted) {
     log.warn("no messages to carry over");
-    return;
+    return null;
   }
-
-  writeSeedContext(params.newSessionFile, formatted, count);
-  log.info(
-    `seeded new session with recent chat (up to ${count} messages): ${params.newSessionFile}`,
+  return (
+    `[Previous session context — last ${count} messages]\n\n` +
+    `${formatted}\n\n` +
+    `[End of previous session context. Continue the conversation naturally.]`
   );
 }

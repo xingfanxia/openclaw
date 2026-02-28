@@ -163,6 +163,7 @@ export async function getReplyFromConfig(
     isGroup,
     triggerBodyNormalized,
     bodyStripped,
+    sessionSeedContext,
   } = sessionState;
 
   await applyResetModelOverride({
@@ -367,5 +368,6 @@ export async function getReplyFromConfig(
     storePath,
     workspaceDir,
     abortedLastRun,
+    sessionSeedContext,
   });
 }

@@ -42,7 +42,7 @@ import { resolveCommandAuthorization } from "../command-auth.js";
 import type { MsgContext, TemplateContext } from "../templating.js";
 import { normalizeInboundTextNewlines } from "./inbound-text.js";
 import { stripMentions, stripStructuralPrefixes } from "./mentions.js";
-import { seedSessionFromPrevious } from "./session-seed.js";
+import { buildSeedContextPrefix } from "./session-seed.js";
 
 const log = createSubsystemLogger("session-init");
 
@@ -104,6 +104,7 @@ export type SessionInitResult = {
   isGroup: boolean;
   bodyStripped?: string;
   triggerBodyNormalized: string;
+  sessionSeedContext?: string;
 };
 
 function forkSessionFromParent(params: {
@@ -463,15 +464,16 @@ export async function initSessionState(params: {
     },
   );
 
-  // Seed new session with recent chat from old session.
-  if (isNewSession && previousSessionEntry?.sessionFile && sessionEntry.sessionFile) {
+  // Build seed context prefix for injection into the user's message body.
+  let sessionSeedContext: string | undefined;
+  if (isNewSession && previousSessionEntry?.sessionFile) {
     const carryOver = resetPolicy.carryOverMessages ?? 50;
     if (carryOver > 0) {
-      seedSessionFromPrevious({
-        oldSessionFile: previousSessionEntry.sessionFile,
-        newSessionFile: sessionEntry.sessionFile,
-        messageCount: carryOver,
-      });
+      sessionSeedContext =
+        buildSeedContextPrefix({
+          oldSessionFile: previousSessionEntry.sessionFile,
+          messageCount: carryOver,
+        }) ?? undefined;
     }
   }
 
@@ -560,5 +562,6 @@ export async function initSessionState(params: {
     isGroup,
     bodyStripped,
     triggerBodyNormalized,
+    sessionSeedContext,
   };
 }
