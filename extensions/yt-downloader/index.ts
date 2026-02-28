@@ -1,6 +1,6 @@
 import type { OpenClawPluginApi } from "../../src/plugins/types.js";
-import type { YtDownloaderConfig } from "./src/types.js";
 import { createVideoDownloadTool } from "./src/tools/video-download.js";
+import type { YtDownloaderConfig } from "./src/types.js";
 
 export default function register(api: OpenClawPluginApi): void {
   const config = (api.pluginConfig ?? {}) as YtDownloaderConfig;

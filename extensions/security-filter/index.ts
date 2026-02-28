@@ -1,10 +1,10 @@
 import type { OpenClawPluginApi } from "../../src/plugins/types.js";
-import type { SecurityMode } from "./src/redactor.js";
 import { AuditLog } from "./src/audit-log.js";
 import { createSecurityModeCommand } from "./src/commands/security-mode.js";
 import { createSecurityStatusCommand } from "./src/commands/security-status.js";
 import { createMessageFilter } from "./src/hooks/message-filter.js";
 import { createToolFilter } from "./src/hooks/tool-filter.js";
+import type { SecurityMode } from "./src/redactor.js";
 import { Redactor } from "./src/redactor.js";
 import { SecretDetector } from "./src/secret-detector.js";
 

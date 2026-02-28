@@ -1,5 +1,5 @@
-import type { NotionConfig, NotionAccount } from "../types.js";
 import { getWorkspaceInfo, listDatabases } from "../notion-client.js";
+import type { NotionConfig, NotionAccount } from "../types.js";
 
 async function getAccountStatus(account: NotionAccount): Promise<string[]> {
   const lines: string[] = [];

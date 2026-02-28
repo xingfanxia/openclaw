@@ -1,7 +1,7 @@
 import type { OpenClawPluginApi } from "../../src/plugins/types.js";
-import type { RssDigestConfig } from "./src/types.js";
 import { handleRssCommand } from "./src/rss-command.js";
 import { createRssFetchTool } from "./src/rss-fetch-tool.js";
+import type { RssDigestConfig } from "./src/types.js";
 
 export default function register(api: OpenClawPluginApi): void {
   const config = (api.pluginConfig ?? {}) as RssDigestConfig;

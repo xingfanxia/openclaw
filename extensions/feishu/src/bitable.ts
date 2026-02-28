@@ -255,7 +255,6 @@ function resolveBitableFieldTypeId(fieldType: string): number {
   return id;
 }
 
-
 /** Logger interface for cleanup operations */
 type CleanupLogger = {
   debug: (msg: string) => void;

@@ -1,5 +1,5 @@
-import type { OAuthConfig } from "../oauth2.js";
 import { getProfile } from "../gmail-client.js";
+import type { OAuthConfig } from "../oauth2.js";
 import { getToken, isTokenExpired } from "../token-store.js";
 
 interface AccountConfig {

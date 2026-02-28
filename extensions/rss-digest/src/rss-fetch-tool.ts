@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
-import type { RssDigestConfig } from "./types.js";
 import { fetchAllFeeds, filterByAge, enrichWithContent } from "./feed-fetcher.js";
+import type { RssDigestConfig } from "./types.js";
 
 export function createRssFetchTool(config: RssDigestConfig): AnyAgentTool {
   return {

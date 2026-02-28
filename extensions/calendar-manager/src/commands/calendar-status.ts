@@ -1,5 +1,5 @@
-import type { OAuthConfig, AccountConfig } from "../types.js";
 import { getCalendarStatus } from "../calendar-client.js";
+import type { OAuthConfig, AccountConfig } from "../types.js";
 
 export interface CalendarAccountStatus {
   id: string;

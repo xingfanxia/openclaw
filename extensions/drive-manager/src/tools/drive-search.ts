@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
-import type { OAuthConfig, AccountConfig, DriveConfig } from "../types.js";
 import { searchFiles } from "../drive-client.js";
+import type { OAuthConfig, AccountConfig, DriveConfig } from "../types.js";
 import { resolveAccountId } from "../types.js";
 
 export function createDriveSearchTool(

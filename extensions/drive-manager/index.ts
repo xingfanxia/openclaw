@@ -1,5 +1,4 @@
 import type { OpenClawPluginApi } from "../../src/plugins/types.js";
-import type { DriveConfig } from "./src/types.js";
 import { getDriveStatuses, formatDriveStatusText } from "./src/commands/drive-status.js";
 import { createDriveCreateTool } from "./src/tools/drive-create.js";
 import { createDriveInfoTool } from "./src/tools/drive-info.js";
@@ -9,6 +8,7 @@ import { createDriveSearchTool } from "./src/tools/drive-search.js";
 import { createDriveShareTool } from "./src/tools/drive-share.js";
 import { createDriveUpdateTool } from "./src/tools/drive-update.js";
 import { createDriveUploadTool } from "./src/tools/drive-upload.js";
+import type { DriveConfig } from "./src/types.js";
 
 export default function register(api: OpenClawPluginApi): void {
   const config = (api.pluginConfig ?? {}) as DriveConfig;

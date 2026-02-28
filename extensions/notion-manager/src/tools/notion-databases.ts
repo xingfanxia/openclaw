@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
-import type { NotionConfig } from "../types.js";
 import { listDatabases } from "../notion-client.js";
+import type { NotionConfig } from "../types.js";
 import { resolveAccount } from "../types.js";
 
 export function createNotionDatabasesTool(config: NotionConfig): AnyAgentTool {

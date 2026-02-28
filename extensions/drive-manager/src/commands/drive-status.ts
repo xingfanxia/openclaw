@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { OAuthConfig, AccountConfig } from "../types.js";
 import { getStorageQuota } from "../drive-client.js";
+import type { OAuthConfig, AccountConfig } from "../types.js";
 
 const TOKEN_FILE = path.join(os.homedir(), ".openclaw", "gmail-tokens.json");
 

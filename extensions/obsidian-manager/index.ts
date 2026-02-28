@@ -1,5 +1,4 @@
 import type { OpenClawPluginApi } from "../../src/plugins/types.js";
-import type { ObsidianConfig } from "./src/types.js";
 import { getVaultStatus } from "./src/commands/obsidian-status.js";
 import { handleObsidianSync } from "./src/commands/obsidian-sync-cmd.js";
 import { createObsidianLinksTool } from "./src/tools/obsidian-links.js";
@@ -10,6 +9,7 @@ import { createObsidianSyncTool } from "./src/tools/obsidian-sync.js";
 import { createObsidianTagsTool } from "./src/tools/obsidian-tags.js";
 import { createObsidianUpdateTool } from "./src/tools/obsidian-update.js";
 import { createObsidianWriteTool } from "./src/tools/obsidian-write.js";
+import type { ObsidianConfig } from "./src/types.js";
 
 export default function register(api: OpenClawPluginApi): void {
   const config = (api.pluginConfig ?? {}) as ObsidianConfig;

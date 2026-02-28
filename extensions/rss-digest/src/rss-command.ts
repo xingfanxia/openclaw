@@ -1,5 +1,5 @@
-import type { RssDigestConfig } from "./types.js";
 import { fetchAllFeeds, filterByAge } from "./feed-fetcher.js";
+import type { RssDigestConfig } from "./types.js";
 
 export async function handleRssCommand(config: RssDigestConfig, args: string): Promise<string> {
   const parts = args.split(/\s+/).filter(Boolean);

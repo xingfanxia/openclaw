@@ -1,6 +1,6 @@
-import matter from "gray-matter";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import matter from "gray-matter";
 import simpleGit from "simple-git";
 import type { ObsidianConfig, ObsidianNote, NoteListEntry } from "./types.js";
 import {

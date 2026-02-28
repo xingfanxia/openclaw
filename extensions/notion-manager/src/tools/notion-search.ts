@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
-import type { NotionConfig } from "../types.js";
 import { searchNotion } from "../notion-client.js";
+import type { NotionConfig } from "../types.js";
 import { resolveAccount } from "../types.js";
 
 export function createNotionSearchTool(config: NotionConfig): AnyAgentTool {

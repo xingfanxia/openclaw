@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
-import type { OAuthConfig } from "../oauth2.js";
 import { readEmail } from "../gmail-client.js";
+import type { OAuthConfig } from "../oauth2.js";
 
 interface AccountConfig {
   id: string;

@@ -1,5 +1,4 @@
 import type { OpenClawPluginApi } from "../../src/plugins/types.js";
-import type { NotionConfig } from "./src/types.js";
 import { getNotionStatus } from "./src/commands/notion-status.js";
 import { createNotionAppendTool } from "./src/tools/notion-append.js";
 import { createNotionCommentsTool } from "./src/tools/notion-comments.js";
@@ -9,6 +8,7 @@ import { createNotionDatabasesTool } from "./src/tools/notion-databases.js";
 import { createNotionReadTool } from "./src/tools/notion-read.js";
 import { createNotionSearchTool } from "./src/tools/notion-search.js";
 import { createNotionUpdateTool } from "./src/tools/notion-update.js";
+import type { NotionConfig } from "./src/types.js";
 
 export default function register(api: OpenClawPluginApi): void {
   const raw = (api.pluginConfig ?? {}) as Record<string, unknown>;

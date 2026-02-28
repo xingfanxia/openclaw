@@ -1,7 +1,7 @@
-import { google, calendar_v3 } from "googleapis";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { google, calendar_v3 } from "googleapis";
 import type { OAuthConfig, CalendarEntry, CalendarEvent } from "./types.js";
 
 const TOKEN_FILE = path.join(os.homedir(), ".openclaw", "gmail-tokens.json");

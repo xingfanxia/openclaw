@@ -1,11 +1,11 @@
-import { Type } from "@sinclair/typebox";
 import * as fs from "fs";
 import * as path from "path";
+import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
 import type { OpenClawPluginApi } from "../../../src/plugins/types.js";
+import { resolveClaudeConfig } from "./config-sharing.js";
 import type { ProjectRegistry } from "./project-registry.js";
 import type { WorktreeManager, WorktreeInfo } from "./worktree-manager.js";
-import { resolveClaudeConfig } from "./config-sharing.js";
 
 const LOG_DIR = "/tmp/openclaw";
 const LOG_FILE = path.join(LOG_DIR, "coding-sessions.jsonl");
