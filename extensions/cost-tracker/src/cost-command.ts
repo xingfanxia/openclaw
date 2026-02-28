@@ -1,6 +1,7 @@
 import { loadConfig } from "../../../src/config/config.js";
 import { loadCostUsageSummary } from "../../../src/infra/session-cost-usage.js";
 import { formatTokenCount, formatUsd } from "../../../src/utils/usage-format.js";
+import { handleCostMessagesCommand } from "./cost-messages.js";
 
 function parsePeriod(args: string): { startMs: number; endMs: number; label: string } {
   const now = new Date();
@@ -60,6 +61,11 @@ function fmtDate(ms: number): string {
 }
 
 export async function handleCostCommand(args: string): Promise<string> {
+  const firstWord = args.trim().split(/\s+/)[0]?.toLowerCase();
+  if (firstWord === "messages" || firstWord === "msgs" || firstWord === "detail") {
+    return handleCostMessagesCommand(args.trim().slice(firstWord.length).trim());
+  }
+
   const { startMs, endMs, label } = parsePeriod(args);
   const config = loadConfig();
   const summary = await loadCostUsageSummary({ startMs, endMs, config });
@@ -125,6 +131,6 @@ export async function handleCostCommand(args: string): Promise<string> {
     lines.push("");
   }
 
-  lines.push("Usage: /cost [today|day|week|month|ytd]");
+  lines.push("Usage: /cost [today|week|month|ytd|messages [N]]");
   return lines.join("\n");
 }

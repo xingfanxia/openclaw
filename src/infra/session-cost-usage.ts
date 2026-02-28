@@ -239,7 +239,7 @@ async function* readJsonlRecords(filePath: string): AsyncGenerator<Record<string
   }
 }
 
-async function scanTranscriptFile(params: {
+export async function scanTranscriptFile(params: {
   filePath: string;
   config?: OpenClawConfig;
   onEntry: (entry: ParsedTranscriptEntry) => void;
