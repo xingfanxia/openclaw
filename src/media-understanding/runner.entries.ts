@@ -14,6 +14,7 @@ import type {
   MediaUnderstandingModelConfig,
 } from "../config/types.tools.js";
 import { logVerbose, shouldLogVerbose } from "../globals.js";
+import { getChildLogger } from "../logging/logger.js";
 import { runExec } from "../process/exec.js";
 import { MediaAttachmentCache } from "./attachments.js";
 import {
@@ -465,6 +466,9 @@ export async function runProviderEntry(params: {
           timeoutMs,
         }),
     });
+    getChildLogger({ subsystem: "media-understanding" }).info(
+      `Audio transcription: provider=${providerId} model=${result.model ?? model} chars=${result.text.length}`,
+    );
     return {
       kind: "audio.transcription",
       attachmentIndex: params.attachmentIndex,

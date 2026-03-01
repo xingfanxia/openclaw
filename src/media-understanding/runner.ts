@@ -15,6 +15,7 @@ import type {
   MediaUnderstandingModelConfig,
 } from "../config/types.tools.js";
 import { logVerbose, shouldLogVerbose } from "../globals.js";
+import { getChildLogger } from "../logging/logger.js";
 import {
   mergeInboundPathRoots,
   resolveIMessageAttachmentRoots,
@@ -651,6 +652,9 @@ async function runAttachmentEntries(params: {
           outcome: "failed",
           reason: String(err),
         }),
+      );
+      getChildLogger({ subsystem: "media-understanding" }).warn(
+        `${capability} provider ${entry.provider ?? "unknown"} failed: ${String(err)}`,
       );
       if (shouldLogVerbose()) {
         logVerbose(`${capability} understanding failed: ${String(err)}`);
