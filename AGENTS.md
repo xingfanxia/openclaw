@@ -37,6 +37,12 @@
 - See `docs/.i18n/README.md`.
 - The pipeline can be slow/inefficient; if it’s dragging, ping @jospalmbier on Discord instead of hacking around it.
 
+## Gateway Config Repo
+
+- Gateway runtime config lives in `~/.openclaw/` and is tracked by a separate repo: `xingfanxia/openclaw-config` (private).
+- When you modify gateway config (e.g. `openclaw.json`, cron jobs, workspaces), also commit and push in the config repo: `cd ~/.openclaw && git add -A && git commit -m "<msg>" && git push`.
+- Sessions, tokens, and credentials are gitignored in that repo.
+
 ## exe.dev VM ops (general)
 
 - Access: stable path is `ssh exe.dev` then `ssh vm-name` (assume SSH key already set).
