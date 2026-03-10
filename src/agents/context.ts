@@ -178,6 +178,11 @@ function ensureContextWindowCacheLoaded(): Promise<void> {
   return loadPromise;
 }
 
+/** Resolves when the model context window cache is fully populated. */
+export async function ensureContextWindowsLoaded(): Promise<void> {
+  await ensureContextWindowCacheLoaded();
+}
+
 export function lookupContextTokens(modelId?: string): number | undefined {
   if (!modelId) {
     return undefined;
@@ -254,10 +259,6 @@ export function resolveContextTokensForModel(params: {
   contextTokensOverride?: number;
   fallbackContextTokens?: number;
 }): number | undefined {
-  if (typeof params.contextTokensOverride === "number" && params.contextTokensOverride > 0) {
-    return params.contextTokensOverride;
-  }
-
   const ref = resolveProviderModelRef({
     provider: params.provider,
     model: params.model,
@@ -269,5 +270,14 @@ export function resolveContextTokensForModel(params: {
     }
   }
 
-  return lookupContextTokens(params.model) ?? params.fallbackContextTokens;
+  // Prefer a fresh model-based lookup over the stored session value, which may be
+  // stale (e.g. set to the default model's window before the channel override model
+  // was resolved for the first time).
+  return (
+    lookupContextTokens(params.model) ??
+    (typeof params.contextTokensOverride === "number" && params.contextTokensOverride > 0
+      ? params.contextTokensOverride
+      : undefined) ??
+    params.fallbackContextTokens
+  );
 }

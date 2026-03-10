@@ -1,4 +1,4 @@
-import { resolveContextTokensForModel } from "../agents/context.js";
+import { ensureContextWindowsLoaded, resolveContextTokensForModel } from "../agents/context.js";
 import { DEFAULT_CONTEXT_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { resolveConfiguredModelRef } from "../agents/model-selection.js";
 import type { OpenClawConfig } from "../config/config.js";
@@ -103,6 +103,9 @@ export async function getStatusSummary(
   });
   const mainSessionKey = resolveMainSessionKey(cfg);
   const queuedSystemEvents = peekSystemEvents(mainSessionKey);
+
+  // Ensure the context window cache is populated before we call lookupContextTokens.
+  await ensureContextWindowsLoaded();
 
   const resolved = resolveConfiguredModelRef({
     cfg,

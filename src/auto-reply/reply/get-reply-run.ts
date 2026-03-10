@@ -56,14 +56,9 @@ type ExecOverrides = Pick<ExecToolDefaults, "host" | "security" | "ask" | "node"
 function buildResetSessionNoticeText(params: {
   provider: string;
   model: string;
-  defaultProvider: string;
-  defaultModel: string;
 }): string {
   const modelLabel = `${params.provider}/${params.model}`;
-  const defaultLabel = `${params.defaultProvider}/${params.defaultModel}`;
-  return modelLabel === defaultLabel
-    ? `✅ New session started · model: ${modelLabel}`
-    : `✅ New session started · model: ${modelLabel} (default: ${defaultLabel})`;
+  return `✅ New session started · model: ${modelLabel}`;
 }
 
 function resolveResetSessionNoticeRoute(params: {
@@ -110,8 +105,6 @@ async function sendResetSessionNotice(params: {
       text: buildResetSessionNoticeText({
         provider: params.provider,
         model: params.model,
-        defaultProvider: params.defaultProvider,
-        defaultModel: params.defaultModel,
       }),
     },
     channel: route.channel,
