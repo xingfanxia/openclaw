@@ -9,7 +9,7 @@ export default function register(api: OpenClawPluginApi): void {
       "Show token usage and cost breakdown. Usage: /cost [today|week|month|ytd|messages [N]]",
     handler: async (ctx) => {
       const args = (ctx.args ?? "").trim();
-      const text = await handleCostCommand(args);
+      const text = await handleCostCommand(args, ctx.config);
       return { text };
     },
   });

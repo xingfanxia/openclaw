@@ -1,10 +1,51 @@
 import fs from "node:fs";
-import { loadConfig } from "../../../src/config/config.js";
-import { resolveSessionFilePath, resolveStorePath } from "../../../src/config/sessions/paths.js";
-import { loadSessionStore } from "../../../src/config/sessions/store.js";
-import { scanTranscriptFile } from "../../../src/infra/session-cost-usage.js";
-import type { ParsedTranscriptEntry } from "../../../src/infra/session-cost-usage.types.js";
-import { formatTokenCount, formatUsd } from "../../../src/utils/usage-format.js";
+import type { OpenClawConfig } from "openclaw/plugin-sdk";
+import { resolveSessionsDir, scanTranscriptEntries, type ParsedEntry } from "./cost-scan.js";
+
+// ---------------------------------------------------------------------------
+// Inlined format helpers (no internal imports)
+// ---------------------------------------------------------------------------
+
+function formatTokenCount(value?: number): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "0";
+  }
+  const safe = Math.max(0, value);
+  if (safe >= 1_000_000) {
+    return `${(safe / 1_000_000).toFixed(1)}m`;
+  }
+  if (safe >= 1_000) {
+    const precision = safe >= 10_000 ? 0 : 1;
+    const formatted = (safe / 1_000).toFixed(precision);
+    if (Number(formatted) >= 1_000) {
+      return `${(safe / 1_000_000).toFixed(1)}m`;
+    }
+    return `${formatted}k`;
+  }
+  return String(Math.round(safe));
+}
+
+function formatUsd(value?: number): string | undefined {
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value >= 0.01) {
+    return `$${value.toFixed(2)}`;
+  }
+  return `$${value.toFixed(4)}`;
+}
+
+function fmtCost(v: number): string {
+  return formatUsd(v) ?? "$0.00";
+}
+
+function fmtTokens(v: number): string {
+  return formatTokenCount(v);
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface MessageEntry {
   index: number;
@@ -19,86 +60,105 @@ interface MessageEntry {
   tools: string[];
 }
 
-function fmtCost(v: number): string {
-  return formatUsd(v) ?? "$0.00";
-}
+// ---------------------------------------------------------------------------
+// Resolve the most recently updated session transcript file
+// ---------------------------------------------------------------------------
 
-function fmtTokens(v: number): string {
-  return formatTokenCount(v);
-}
+function resolveActiveSessionFile(config?: OpenClawConfig): string | null {
+  const sessionsDir = resolveSessionsDir();
+  const storePath = `${sessionsDir}/sessions.json`;
 
-function resolveActiveSessionFile(): string | null {
-  const config = loadConfig();
-  const storePath = resolveStorePath(config.session?.store);
-  const store = loadSessionStore(storePath, { skipCache: true });
+  let store: Record<string, Record<string, unknown>>;
+  try {
+    const raw = fs.readFileSync(storePath, "utf-8");
+    store = JSON.parse(raw) as Record<string, Record<string, unknown>>;
+  } catch {
+    return null;
+  }
 
   // Find the most recently updated session entry
-  let latest: { key: string; entry: (typeof store)[string] } | null = null;
+  let latestKey: string | null = null;
+  let latestUpdatedAt = 0;
+  let latestEntry: Record<string, unknown> | null = null;
+
   for (const [key, entry] of Object.entries(store)) {
+    if (!entry || typeof entry !== "object") continue;
     if (!entry.sessionFile && !entry.sessionId) continue;
-    if (!latest || (entry.updatedAt ?? 0) > (latest.entry.updatedAt ?? 0)) {
-      latest = { key, entry };
+    const updatedAt = typeof entry.updatedAt === "number" ? entry.updatedAt : 0;
+    if (updatedAt > latestUpdatedAt) {
+      latestUpdatedAt = updatedAt;
+      latestKey = key;
+      latestEntry = entry;
     }
   }
-  if (!latest) return null;
 
-  const sessionFile =
-    latest.entry.sessionFile ?? resolveSessionFilePath(latest.entry.sessionId, latest.entry);
-  if (!sessionFile || !fs.existsSync(sessionFile)) return null;
+  if (!latestEntry) return null;
+
+  // Resolve session file path
+  let sessionFile = latestEntry.sessionFile as string | undefined;
+  if (!sessionFile) {
+    const sessionId = latestEntry.sessionId as string | undefined;
+    if (!sessionId) return null;
+    sessionFile = `${sessionsDir}/${sessionId}.jsonl`;
+  }
+
+  if (!fs.existsSync(sessionFile)) return null;
   return sessionFile;
 }
 
-export async function handleCostMessagesCommand(args: string): Promise<string> {
+// ---------------------------------------------------------------------------
+// Command handler
+// ---------------------------------------------------------------------------
+
+export async function handleCostMessagesCommand(
+  args: string,
+  config?: OpenClawConfig,
+): Promise<string> {
   const countArg = parseInt(args.trim(), 10);
   const requestedCount = Number.isFinite(countArg) && countArg > 0 ? Math.min(countArg, 200) : 20;
 
-  const sessionFile = resolveActiveSessionFile();
+  const sessionFile = resolveActiveSessionFile(config);
   if (!sessionFile) {
     return "No active session found.";
   }
 
-  const config = loadConfig();
   const allEntries: MessageEntry[] = [];
   let messageIndex = 0;
   let cumulativeCost = 0;
 
-  await scanTranscriptFile({
-    filePath: sessionFile,
-    config,
-    onEntry: (entry: ParsedTranscriptEntry) => {
-      messageIndex++;
+  for await (const entry of scanTranscriptEntries(sessionFile)) {
+    messageIndex++;
 
-      // Only show assistant messages with usage data
-      if (entry.role !== "assistant" || !entry.usage) return;
+    // Only show assistant messages with usage data
+    if (entry.role !== "assistant" || !entry.usage) continue;
 
-      const input = entry.usage.input ?? 0;
-      const output = entry.usage.output ?? 0;
-      const cacheRead = entry.usage.cacheRead ?? 0;
-      const cost = entry.costTotal ?? 0;
-      cumulativeCost += cost;
+    const input = entry.usage.input ?? 0;
+    const output = entry.usage.output ?? 0;
+    const cacheRead = entry.usage.cacheRead ?? 0;
+    const cost = entry.costTotal ?? 0;
+    cumulativeCost += cost;
 
-      const ts = entry.timestamp;
-      const time = ts
-        ? `${String(ts.getUTCHours()).padStart(2, "0")}:${String(ts.getUTCMinutes()).padStart(2, "0")}`
-        : "??:??";
+    const ts = entry.timestamp;
+    const time = ts
+      ? `${String(ts.getUTCHours()).padStart(2, "0")}:${String(ts.getUTCMinutes()).padStart(2, "0")}`
+      : "??:??";
 
-      const durationSec =
-        entry.durationMs !== undefined ? Math.round(entry.durationMs / 100) / 10 : undefined;
+    const durationSec =
+      entry.durationMs !== undefined ? Math.round(entry.durationMs / 100) / 10 : undefined;
 
-      allEntries.push({
-        index: messageIndex,
-        time,
-        model: entry.model,
-        durationSec,
-        cost,
-        input,
-        output,
-        cacheRead,
-        cumCost: cumulativeCost,
-        tools: entry.toolNames,
-      });
-    },
-  });
+    allEntries.push({
+      index: messageIndex,
+      time,
+      model: entry.model,
+      durationSec,
+      cost,
+      input,
+      output,
+      cacheRead,
+      cumCost: cumulativeCost,
+      tools: entry.toolNames,
+    });
+  }
 
   if (allEntries.length === 0) {
     return "No messages with usage data in current session.";

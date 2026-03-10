@@ -1,7 +1,43 @@
-import { loadConfig } from "../../../src/config/config.js";
-import { loadCostUsageSummary } from "../../../src/infra/session-cost-usage.js";
-import { formatTokenCount, formatUsd } from "../../../src/utils/usage-format.js";
+import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { handleCostMessagesCommand } from "./cost-messages.js";
+import { loadCostUsageSummary, type CostUsageSummary } from "./cost-scan.js";
+
+// ---------------------------------------------------------------------------
+// Inlined format helpers (no internal imports)
+// ---------------------------------------------------------------------------
+
+function formatTokenCount(value?: number): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "0";
+  }
+  const safe = Math.max(0, value);
+  if (safe >= 1_000_000) {
+    return `${(safe / 1_000_000).toFixed(1)}m`;
+  }
+  if (safe >= 1_000) {
+    const precision = safe >= 10_000 ? 0 : 1;
+    const formatted = (safe / 1_000).toFixed(precision);
+    if (Number(formatted) >= 1_000) {
+      return `${(safe / 1_000_000).toFixed(1)}m`;
+    }
+    return `${formatted}k`;
+  }
+  return String(Math.round(safe));
+}
+
+function formatUsd(value?: number): string | undefined {
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value >= 0.01) {
+    return `$${value.toFixed(2)}`;
+  }
+  return `$${value.toFixed(4)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Period parsing
+// ---------------------------------------------------------------------------
 
 function parsePeriod(args: string): { startMs: number; endMs: number; label: string } {
   const now = new Date();
@@ -28,6 +64,10 @@ function parsePeriod(args: string): { startMs: number; endMs: number; label: str
   return { startMs: todayStartMs, endMs: todayEndMs, label: "Today" };
 }
 
+// ---------------------------------------------------------------------------
+// Spark bar
+// ---------------------------------------------------------------------------
+
 function sparkBar(values: number[], width: number = 14): string {
   const blocks = [
     " ",
@@ -47,6 +87,10 @@ function sparkBar(values: number[], width: number = 14): string {
     .join("");
 }
 
+// ---------------------------------------------------------------------------
+// Formatting shorthands
+// ---------------------------------------------------------------------------
+
 function fmtCost(value: number): string {
   return formatUsd(value) ?? "$0.00";
 }
@@ -60,21 +104,24 @@ function fmtDate(ms: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-export async function handleCostCommand(args: string): Promise<string> {
+// ---------------------------------------------------------------------------
+// Main command handler
+// ---------------------------------------------------------------------------
+
+export async function handleCostCommand(args: string, config?: OpenClawConfig): Promise<string> {
   const firstWord = args.trim().split(/\s+/)[0]?.toLowerCase();
   if (firstWord === "messages" || firstWord === "msgs" || firstWord === "detail") {
-    return handleCostMessagesCommand(args.trim().slice(firstWord.length).trim());
+    return handleCostMessagesCommand(args.trim().slice(firstWord.length).trim(), config);
   }
 
   const { startMs, endMs, label } = parsePeriod(args);
-  const config = loadConfig();
-  const summary = await loadCostUsageSummary({ startMs, endMs, config });
-
-  if (!summary) {
-    return "No usage data available.";
-  }
+  const summary: CostUsageSummary = await loadCostUsageSummary({ startMs, endMs, config });
 
   const { totals, daily } = summary;
+
+  if (totals.totalTokens === 0 && totals.totalCost === 0) {
+    return "No usage data available.";
+  }
 
   const lines: string[] = [];
   lines.push(`\u{1F4CA} Usage: ${label}`);
