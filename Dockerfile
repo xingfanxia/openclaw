@@ -206,6 +206,57 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \
  && chmod 755 /app/openclaw.mjs
 
+# --- Fork customizations: coding agent tooling ---
+
+# GitHub CLI (needed by coding agent extensions for PR workflows)
+RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=openclaw-bookworm-apt-lists,target=/var/lib/apt,sharing=locked \
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gh
+
+# Developer tools for coding agents (codex/claude_code use these in sandboxed sessions)
+RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=openclaw-bookworm-apt-lists,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ripgrep jq fd-find && \
+    ln -s /usr/bin/fdfind /usr/local/bin/fd
+
+# yt-dlp + ffmpeg (needed by yt-downloader extension)
+RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=openclaw-bookworm-apt-lists,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg && \
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+      -o /usr/local/bin/yt-dlp && \
+    chmod a+rx /usr/local/bin/yt-dlp
+
+# Coding agent SDKs (Claude Code, Codex) + Vercel CLI
+RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-agent-sdk \
+      @openai/codex @openai/codex-sdk vercel
+
+# Symlink globally-installed SDKs into /app/node_modules so bundled extension
+# code can resolve them (NODE_PATH works for CJS but NOT for ESM import())
+RUN ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk \
+      /app/node_modules/@anthropic-ai/claude-agent-sdk && \
+    mkdir -p /app/node_modules/@openai && \
+    ln -s /usr/local/lib/node_modules/@openai/codex-sdk \
+      /app/node_modules/@openai/codex-sdk && \
+    chown -h node:node /app/node_modules/@anthropic-ai/claude-agent-sdk \
+      /app/node_modules/@openai /app/node_modules/@openai/codex-sdk
+
+# Pre-create writable dirs for Claude Code and Codex CLIs.
+# Credential files are bind-mounted read-only at runtime; these dirs
+# let the CLIs write session data, caches, and skills.
+RUN mkdir -p /home/node/.claude /home/node/.codex && \
+    chown -R node:node /home/node/.claude /home/node/.codex
+
+# --- End fork customizations ---
+
 ENV NODE_ENV=production
 
 # Security hardening: Run as non-root user
