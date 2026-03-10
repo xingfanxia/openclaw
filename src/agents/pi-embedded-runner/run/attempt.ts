@@ -101,7 +101,11 @@ import {
   sanitizeSessionHistory,
   sanitizeToolsForGoogle,
 } from "../google.js";
-import { getDmHistoryLimitFromSessionKey, limitHistoryTurns } from "../history.js";
+import {
+  getDmHistoryLimitFromSessionKey,
+  limitHistoryTurns,
+  stripInternalHeartbeatPromptMessages,
+} from "../history.js";
 import { log } from "../logger.js";
 import { buildModelAliasLines } from "../model.js";
 import {
@@ -1404,8 +1408,14 @@ export async function runEmbeddedAttempt(
         const validated = transcriptPolicy.validateAnthropicTurns
           ? validateAnthropicTurns(validatedGemini)
           : validatedGemini;
+        // Heartbeat runs share the main session. Remove synthetic heartbeat
+        // control prompts so context reflects user-visible chat history.
+        const isHeartbeatRun = runtimeChannel === "heartbeat";
+        const historyForLimit = isHeartbeatRun
+          ? stripInternalHeartbeatPromptMessages(validated)
+          : validated;
         const truncated = limitHistoryTurns(
-          validated,
+          historyForLimit,
           getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
         );
         // Re-run tool_use/tool_result pairing repair after truncation, since

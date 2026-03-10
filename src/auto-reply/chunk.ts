@@ -15,11 +15,12 @@ export type TextChunkProvider = ChannelId | typeof INTERNAL_MESSAGE_CHANNEL;
 /**
  * Chunking mode for outbound messages:
  * - "length": Split only when exceeding textChunkLimit (default)
- * - "newline": Prefer breaking on "soft" boundaries. Historically this split on every
- *   newline; now it only breaks on paragraph boundaries (blank lines) unless the text
+ * - "newline": Prefer breaking on paragraph boundaries (blank lines) unless the text
  *   exceeds the length limit.
+ * - "bubble": Pack lines into chunks at single newline boundaries up to the limit,
+ *   producing multiple chat bubbles. Best for chat apps like Telegram/WeChat.
  */
-export type ChunkMode = "length" | "newline";
+export type ChunkMode = "length" | "newline" | "bubble";
 
 const DEFAULT_CHUNK_LIMIT = 4000;
 const DEFAULT_CHUNK_MODE: ChunkMode = "length";
@@ -242,9 +243,93 @@ export function chunkByParagraph(
 }
 
 /**
+ * Split text into sentence-like segments on CJK/standard sentence-ending punctuation.
+ * Keeps the punctuation attached to the preceding sentence.
+ */
+function splitBySentence(text: string): string[] {
+  // Split after sentence-ending punctuation, keeping the delimiter
+  // attached to the left segment. Also split on emoji runs followed by space.
+  const segments: string[] = [];
+  let last = 0;
+  const re = /[。！？!?]+[\s]*/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const end = m.index + m[0].length;
+    segments.push(text.slice(last, end));
+    last = end;
+  }
+  if (last < text.length) {
+    segments.push(text.slice(last));
+  }
+  return segments.filter((s) => s.trim());
+}
+
+/**
+ * Split text into chat bubbles for messaging apps like Telegram/WeChat.
+ * Each newline-separated block or paragraph becomes its own bubble.
+ * If no newlines exist, splits on sentence-ending punctuation
+ * and packs 2-3 sentences per bubble for natural chat rhythm.
+ */
+function chunkByBubble(text: string, limit: number): string[] {
+  if (!text || limit <= 0) {
+    return text?.trim() ? [text] : [];
+  }
+  const normalized = text.replace(/\r\n?/g, "\n");
+  // If text has newlines, each non-empty line is its own bubble
+  if (normalized.includes("\n")) {
+    const lines = normalized
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length > 1) {
+      // Pack very short consecutive lines together, but split long ones
+      return packSegments(lines, limit, "\n");
+    }
+  }
+  // No newlines (or single line) — split on sentence boundaries
+  const sentences = splitBySentence(normalized);
+  if (sentences.length <= 1) {
+    return text.trim() ? [text] : [];
+  }
+  // Pack 2-3 sentences per bubble for natural chat rhythm
+  // Use a soft target of ~limit/3 to avoid one giant bubble
+  const softLimit = Math.min(limit, Math.max(80, Math.floor(text.length / 3)));
+  return packSegments(sentences, softLimit);
+}
+
+/** Pack segments into chunks up to the limit, joining with the given separator. */
+function packSegments(segments: string[], limit: number, sep = ""): string[] {
+  const chunks: string[] = [];
+  let buf = "";
+  for (const seg of segments) {
+    const trimmed = seg.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const candidate = buf ? buf + sep + trimmed : trimmed;
+    if (buf && candidate.length > limit) {
+      chunks.push(buf);
+      buf = trimmed;
+    } else {
+      buf = candidate;
+    }
+  }
+  if (buf) {
+    chunks.push(buf);
+  }
+  if (chunks.length === 0 && segments.length > 0) {
+    chunks.push(segments.join("").slice(0, limit));
+  }
+  return chunks;
+}
+
+/**
  * Unified chunking function that dispatches based on mode.
  */
 export function chunkTextWithMode(text: string, limit: number, mode: ChunkMode): string[] {
+  if (mode === "bubble") {
+    return chunkByBubble(text, limit);
+  }
   if (mode === "newline") {
     return chunkByParagraph(text, limit);
   }
@@ -252,6 +337,9 @@ export function chunkTextWithMode(text: string, limit: number, mode: ChunkMode):
 }
 
 export function chunkMarkdownTextWithMode(text: string, limit: number, mode: ChunkMode): string[] {
+  if (mode === "bubble") {
+    return chunkByBubble(text, limit);
+  }
   if (mode === "newline") {
     // Paragraph chunking is fence-safe because we never split at arbitrary indices.
     // If a paragraph must be split by length, defer to the markdown-aware chunker.

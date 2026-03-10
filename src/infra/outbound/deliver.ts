@@ -1,6 +1,7 @@
 import {
   chunkByParagraph,
   chunkMarkdownTextWithMode,
+  chunkTextWithMode,
   resolveChunkMode,
   resolveTextChunkLimit,
 } from "../../auto-reply/chunk.js";
@@ -579,6 +580,17 @@ async function deliverOutboundPayloadsCore(
     throwIfAborted(abortSignal);
     if (!handler.chunker || textLimit === undefined) {
       results.push(await handler.sendText(text, overrides));
+      return;
+    }
+    if (chunkMode === "bubble") {
+      const bubbleChunks = chunkTextWithMode(text, textLimit, "bubble");
+      if (!bubbleChunks.length && text) {
+        bubbleChunks.push(text);
+      }
+      for (const chunk of bubbleChunks) {
+        throwIfAborted(abortSignal);
+        results.push(await handler.sendText(chunk, overrides));
+      }
       return;
     }
     if (chunkMode === "newline") {

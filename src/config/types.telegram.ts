@@ -105,8 +105,8 @@ export type TelegramAccountConfig = {
   dms?: Record<string, DmConfig>;
   /** Outbound text chunk size (chars). Default: 4000. */
   textChunkLimit?: number;
-  /** Chunking mode: "length" (default) splits by size; "newline" splits on every newline. */
-  chunkMode?: "length" | "newline";
+  /** Chunking mode: "length" (default) splits by size; "newline" splits on paragraph boundaries; "bubble" splits at single newlines into chat bubbles. */
+  chunkMode?: "length" | "newline" | "bubble";
   /**
    * Stream preview mode:
    * - "off": disable preview updates

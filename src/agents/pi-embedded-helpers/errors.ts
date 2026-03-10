@@ -710,6 +710,11 @@ export function formatAssistantErrorText(
     return formatRawAssistantErrorForUi(raw);
   }
 
+  // Generic "unknown error" from providers — don't surface raw to user.
+  if (/\bunknown error\b/i.test(raw)) {
+    return "The AI service hit a temporary issue. Please try again.";
+  }
+
   // Never return raw unhandled errors - log for debugging but return safe message
   if (raw.length > 600) {
     log.warn(`Long error truncated: ${raw.slice(0, 200)}`);
@@ -979,6 +984,11 @@ export function classifyFailoverReason(raw: string): FailoverReason | null {
   }
   if (isAuthErrorMessage(raw)) {
     return "auth";
+  }
+  // Generic "unknown error" from providers (e.g. stream ended with stopReason="error")
+  // is transient — retry before surfacing to user.
+  if (/\bunknown error\b/i.test(raw)) {
+    return "timeout";
   }
   return null;
 }

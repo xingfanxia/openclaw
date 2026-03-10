@@ -183,7 +183,11 @@ export const dispatchTelegramMessage = async ({
   });
   const forceBlockStreamingForReasoning = resolvedReasoningLevel === "on";
   const streamReasoningDraft = resolvedReasoningLevel === "stream";
-  const previewStreamingEnabled = streamMode !== "off";
+  // Bubble chunk mode is incompatible with streaming — messages should arrive as
+  // separate finished bubbles, not as a streamed draft that gets edited.
+  const chunkModeEarly = resolveChunkMode(cfg, "telegram", route.accountId);
+  const effectiveStreamOff = streamMode === "off" || chunkModeEarly === "bubble";
+  const previewStreamingEnabled = !effectiveStreamOff;
   const canStreamAnswerDraft =
     previewStreamingEnabled && !accountBlockStreamingEnabled && !forceBlockStreamingForReasoning;
   const canStreamReasoningDraft = canStreamAnswerDraft || streamReasoningDraft;
@@ -367,7 +371,7 @@ export const dispatchTelegramMessage = async ({
     channel: "telegram",
     accountId: route.accountId,
   });
-  const chunkMode = resolveChunkMode(cfg, "telegram", route.accountId);
+  const chunkMode = chunkModeEarly;
 
   // Handle uncached stickers: get a dedicated vision description before dispatch
   // This ensures we cache a raw description rather than a conversational response

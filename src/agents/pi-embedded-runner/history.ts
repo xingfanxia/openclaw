@@ -113,3 +113,62 @@ export function getHistoryLimitFromSessionKey(
  * Alias for backward compatibility.
  */
 export const getDmHistoryLimitFromSessionKey = getHistoryLimitFromSessionKey;
+
+const HEARTBEAT_PROMPT_START = "read heartbeat.md if it exists";
+const HEARTBEAT_PROMPT_OK_INSTRUCTION = "if nothing needs attention, reply heartbeat_ok";
+
+function extractMessageText(msg: AgentMessage): string {
+  const content = (msg as { content?: unknown }).content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .map((block) => {
+      if (!block || typeof block !== "object") {
+        return "";
+      }
+      const text = (block as { text?: unknown }).text;
+      return typeof text === "string" ? text : "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function isInternalHeartbeatPromptText(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return (
+    normalized.startsWith(HEARTBEAT_PROMPT_START) ||
+    (normalized.includes(HEARTBEAT_PROMPT_START) &&
+      normalized.includes(HEARTBEAT_PROMPT_OK_INSTRUCTION))
+  );
+}
+
+/**
+ * Removes internal heartbeat instruction prompts from persisted history so
+ * heartbeat runs reason over user-visible chat content instead of synthetic
+ * control messages.
+ */
+export function stripInternalHeartbeatPromptMessages(messages: AgentMessage[]): AgentMessage[] {
+  let touched = false;
+  const out: AgentMessage[] = [];
+  for (const msg of messages) {
+    if (msg.role !== "user") {
+      out.push(msg);
+      continue;
+    }
+    const text = extractMessageText(msg);
+    if (text && isInternalHeartbeatPromptText(text)) {
+      touched = true;
+      continue;
+    }
+    out.push(msg);
+  }
+  return touched ? out : messages;
+}
