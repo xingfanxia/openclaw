@@ -19,5 +19,13 @@ export function saveJsonFile(pathname: string, data: unknown) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
   fs.writeFileSync(pathname, `${JSON.stringify(data, null, 2)}\n`, "utf8");
-  fs.chmodSync(pathname, 0o600);
+  // chmod is best-effort: in shared host/container setups the file may be owned
+  // by a different uid; ACL entries already control access in that case.
+  try {
+    fs.chmodSync(pathname, 0o600);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EPERM") {
+      throw e;
+    }
+  }
 }
