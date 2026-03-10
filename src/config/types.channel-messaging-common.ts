@@ -32,6 +32,8 @@ export type CommonChannelMessagingConfig = {
   historyLimit?: number;
   /** Max DM turns to keep as history context. */
   dmHistoryLimit?: number;
+  /** Strip tool calls/results/thinking from DM history to reduce token usage. */
+  dmStripToolHistory?: boolean;
   /** Per-DM config overrides keyed by sender ID. */
   dms?: Record<string, DmConfig>;
   /** Outbound text chunk size (chars). */

@@ -114,6 +114,38 @@ export function getHistoryLimitFromSessionKey(
  */
 export const getDmHistoryLimitFromSessionKey = getHistoryLimitFromSessionKey;
 
+export function getDmStripToolHistoryFromSessionKey(
+  sessionKey: string | undefined,
+  config: OpenClawConfig | undefined,
+): boolean {
+  if (!sessionKey || !config) {
+    return false;
+  }
+
+  const parts = sessionKey.split(":").filter(Boolean);
+  const providerParts = parts.length >= 3 && parts[0] === "agent" ? parts.slice(2) : parts;
+
+  const provider = providerParts[0]?.toLowerCase();
+  if (!provider) {
+    return false;
+  }
+
+  const kind = providerParts[1]?.toLowerCase();
+  if (kind !== "dm" && kind !== "direct") {
+    return false;
+  }
+
+  const channels = config?.channels;
+  if (!channels || typeof channels !== "object") {
+    return false;
+  }
+  const entry = (channels as Record<string, unknown>)[provider];
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return false;
+  }
+  return Boolean((entry as { dmStripToolHistory?: boolean }).dmStripToolHistory);
+}
+
 const HEARTBEAT_PROMPT_START = "read heartbeat.md if it exists";
 const HEARTBEAT_PROMPT_OK_INSTRUCTION = "if nothing needs attention, reply heartbeat_ok";
 

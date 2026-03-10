@@ -103,6 +103,7 @@ import {
 } from "../google.js";
 import {
   getDmHistoryLimitFromSessionKey,
+  getDmStripToolHistoryFromSessionKey,
   limitHistoryTurns,
   stripInternalHeartbeatPromptMessages,
   stripToolHistoryFromMessages,
@@ -1428,9 +1429,10 @@ export async function runEmbeddedAttempt(
           heartbeatHistoryLimit ??
             getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
         );
-        // Strip tool calls/results/thinking from history when configured,
+        // Strip tool calls/results/thinking from DM history when configured,
         // reducing token usage by keeping only chat text.
-        const stripped = heartbeatStripTools
+        const dmStripTools = getDmStripToolHistoryFromSessionKey(params.sessionKey, params.config);
+        const stripped = (heartbeatStripTools || dmStripTools)
           ? stripToolHistoryFromMessages(truncated)
           : truncated;
         // Re-run tool_use/tool_result pairing repair after truncation, since
