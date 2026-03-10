@@ -20,6 +20,7 @@ import { normalizeTargetForProvider } from "../../infra/outbound/target-normaliz
 import { POLL_CREATION_PARAM_DEFS, POLL_CREATION_PARAM_NAMES } from "../../poll-params.js";
 import { normalizeAccountId } from "../../routing/session-key.js";
 import { stripReasoningTagsFromText } from "../../shared/text/reasoning-tags.js";
+import { isVolcanoV2, stripEmotionMarkers } from "../../tts/tts.js";
 import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 import { listChannelSupportedActions } from "../channel-tools.js";
@@ -696,15 +697,25 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       // Shallow-copy so we don't mutate the original event args (used for logging/dedup).
       const params = { ...(args as Record<string, unknown>) };
 
-      // Strip reasoning tags from text fields — models may include <think>…</think>
-      // in tool arguments, and the messaging tool send path has no other tag filtering.
+      const cfg = options?.config ?? loadConfig();
+
+      // Strip reasoning tags and TTS markers from text fields — models may include
+      // <think>…</think> or TTS directives that should not be visible to the end user.
+      const volcanoV2Active = isVolcanoV2(cfg?.messages?.tts ?? {});
       for (const field of ["text", "content", "message", "caption"]) {
         if (typeof params[field] === "string") {
           params[field] = stripReasoningTagsFromText(params[field]);
+          // Strip [[tts]] and [[tts: ...]] directives
+          params[field] = (params[field] as string)
+            .replace(/\[\[tts\]\]\s*/gi, "")
+            .replace(/\[\[tts:[\s\S]*?\]\]\s*/gi, "");
+          // Strip [emotion] markers when volcano v2 is active — the LLM adds
+          // [害羞], [温柔] etc. for TTS emotion control but they shouldn't leak to text.
+          if (volcanoV2Active) {
+            params[field] = stripEmotionMarkers(params[field] as string);
+          }
         }
       }
-
-      const cfg = options?.config ?? loadConfig();
       const action = readStringParam(params, "action", {
         required: true,
       }) as ChannelMessageActionName;

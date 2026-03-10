@@ -6,6 +6,7 @@ import {
   isSummarizationEnabled,
   isTtsEnabled,
   isTtsProviderConfigured,
+  isVolcanoV2,
   resolveTtsApiKey,
   resolveTtsConfig,
   resolveTtsPrefsPath,
@@ -56,7 +57,8 @@ function ttsUsage(): ReplyPayload {
       `**Providers:**\n` +
       `• edge — Free, fast (default)\n` +
       `• openai — High quality (requires API key)\n` +
-      `• elevenlabs — Premium voices (requires API key)\n\n` +
+      `• elevenlabs — Premium voices (requires API key)\n` +
+      `• fishaudio — OGG/Opus voice bubbles (requires API key)\n\n` +
       `**Text Limit (default: 1500, max: 4096):**\n` +
       `When text exceeds the limit:\n` +
       `• Summary ON: AI summarizes, then generates audio\n` +
@@ -161,6 +163,7 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
     if (!args.trim()) {
       const hasOpenAI = Boolean(resolveTtsApiKey(config, "openai"));
       const hasElevenLabs = Boolean(resolveTtsApiKey(config, "elevenlabs"));
+      const hasFishAudio = isTtsProviderConfigured(config, "fishaudio");
       const hasEdge = isTtsProviderConfigured(config, "edge");
       return {
         shouldContinue: false,
@@ -170,14 +173,20 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
             `Primary: ${currentProvider}\n` +
             `OpenAI key: ${hasOpenAI ? "✅" : "❌"}\n` +
             `ElevenLabs key: ${hasElevenLabs ? "✅" : "❌"}\n` +
+            `Fish Audio key: ${hasFishAudio ? "✅" : "❌"}\n` +
             `Edge enabled: ${hasEdge ? "✅" : "❌"}\n` +
-            `Usage: /tts provider openai | elevenlabs | edge`,
+            `Usage: /tts provider openai | elevenlabs | fishaudio | edge`,
         },
       };
     }
 
     const requested = args.trim().toLowerCase();
-    if (requested !== "openai" && requested !== "elevenlabs" && requested !== "edge") {
+    if (
+      requested !== "openai" &&
+      requested !== "elevenlabs" &&
+      requested !== "fishaudio" &&
+      requested !== "edge"
+    ) {
       return { shouldContinue: false, reply: ttsUsage() };
     }
 
@@ -253,10 +262,12 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
     const maxLength = getTtsMaxLength(prefsPath);
     const summarize = isSummarizationEnabled(prefsPath);
     const last = getLastTtsAttempt();
+    const volcanoV2 = provider === "volcano" && isVolcanoV2(config);
+    const providerLabel = volcanoV2 ? "volcano v2" : provider;
     const lines = [
       "📊 TTS status",
       `State: ${enabled ? "✅ enabled" : "❌ disabled"}`,
-      `Provider: ${provider} (${hasKey ? "✅ configured" : "❌ not configured"})`,
+      `Provider: ${providerLabel} (${hasKey ? "✅ configured" : "❌ not configured"})`,
       `Text limit: ${maxLength} chars`,
       `Auto-summary: ${summarize ? "on" : "off"}`,
     ];
