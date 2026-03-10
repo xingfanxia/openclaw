@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AnyAgentTool } from "../../src/agents/tools/common.js";
-import type { OpenClawPluginApi } from "../../src/plugins/types.js";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 type PluginCfg = {
   geminiApiKey?: string;

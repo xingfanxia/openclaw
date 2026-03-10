@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "../../src/plugins/types.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { handleGmailAuth } from "./src/commands/gmail-auth.js";
 import { getAccountStatuses, formatStatusText } from "./src/commands/gmail-status.js";
 import { exchangeCodeForTokens } from "./src/oauth2.js";

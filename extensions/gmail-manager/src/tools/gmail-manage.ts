@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
 import {
   modifyMessage,
   batchModifyMessages,

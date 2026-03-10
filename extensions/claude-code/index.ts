@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "../../src/plugins/types.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { createClaudeCodeTool } from "./src/claude-code-tool.js";
 import { createCodexTool } from "./src/codex-tool.js";
 import { ProjectRegistry } from "./src/project-registry.js";

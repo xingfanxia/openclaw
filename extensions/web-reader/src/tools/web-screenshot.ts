@@ -1,7 +1,7 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
-import { readStringParam } from "../../../../src/agents/tools/common.js";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
+import { readStringParam } from "openclaw/plugin-sdk";
 import type { WebReaderConfig } from "../types.js";
 import { resolveBrowserlessBaseUrl } from "../types.js";
 

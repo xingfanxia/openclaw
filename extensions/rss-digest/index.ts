@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "../../src/plugins/types.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { handleRssCommand } from "./src/rss-command.js";
 import { createRssFetchTool } from "./src/rss-fetch-tool.js";
 import type { RssDigestConfig } from "./src/types.js";

@@ -256,11 +256,13 @@ RUN mkdir -p /home/node/.claude /home/node/.codex && \
     chown -R node:node /home/node/.claude /home/node/.codex
 
 # Install runtime dependencies for fork extensions that need them.
-# These extensions have "dependencies" in their package.json but pnpm
-# workspace hoisting doesn't install them into the multi-stage dist image.
+# Strip workspace:* devDependencies first (npm can't resolve them),
+# then install production deps only.
 RUN for ext in calendar-manager drive-manager gmail-manager; do \
       if [ -f "/app/extensions/$ext/package.json" ]; then \
-        cd "/app/extensions/$ext" && npm install --omit=dev 2>/dev/null || true; \
+        cd "/app/extensions/$ext" && \
+        node -e "const p=require('./package.json'); delete p.devDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p,null,2))" && \
+        npm install --omit=dev --no-audit --no-fund 2>&1 | tail -1; \
       fi; \
     done
 

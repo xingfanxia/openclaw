@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "../../src/plugins/types.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { getDriveStatuses, formatDriveStatusText } from "./src/commands/drive-status.js";
 import { createDriveCreateTool } from "./src/tools/drive-create.js";
 import { createDriveInfoTool } from "./src/tools/drive-info.js";

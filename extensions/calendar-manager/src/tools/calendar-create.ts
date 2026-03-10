@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
 import { createEvent } from "../calendar-client.js";
 import type { OAuthConfig, AccountConfig } from "../types.js";
 import {

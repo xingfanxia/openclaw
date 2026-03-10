@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
 import { uploadFileFromPath } from "../../../drive-manager/src/drive-client.js";
 import type { OAuthConfig, AccountConfig, YtDownloaderConfig } from "../types.js";
 import { resolveAccountId } from "../types.js";

@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "../../src/plugins/types.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { AuditLog } from "./src/audit-log.js";
 import { createSecurityModeCommand } from "./src/commands/security-mode.js";
 import { createSecurityStatusCommand } from "./src/commands/security-status.js";

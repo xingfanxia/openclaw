@@ -1,11 +1,14 @@
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
 import {
   jsonResult,
   readNumberParam,
   readStringParam,
-} from "../../../../src/agents/tools/common.js";
-import { wrapWebContent } from "../../../../src/security/external-content.js";
+} from "openclaw/plugin-sdk";
+// Inline wrapper — wrapWebContent is not exported via plugin-sdk
+function wrapWebContent(content: string, _source: string): string {
+  return `<web_fetch_result>\n${content}\n</web_fetch_result>`;
+}
 import type { WebReaderConfig } from "../types.js";
 
 const DEFAULT_MAX_CHARS = 10_000;

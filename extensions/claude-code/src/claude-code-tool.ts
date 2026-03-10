@@ -1,8 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "../../../src/agents/tools/common.js";
-import type { OpenClawPluginApi } from "../../../src/plugins/types.js";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { resolveClaudeConfig } from "./config-sharing.js";
 import type { ProjectRegistry } from "./project-registry.js";
 import type { WorktreeManager, WorktreeInfo } from "./worktree-manager.js";

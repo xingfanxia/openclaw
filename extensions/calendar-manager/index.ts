@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "../../src/plugins/types.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { getCalendarStatuses, formatCalendarStatusText } from "./src/commands/calendar-status.js";
 import { createCalendarAgendaTool } from "./src/tools/calendar-agenda.js";
 import { createCalendarCreateTool } from "./src/tools/calendar-create.js";

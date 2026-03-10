@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "../../../../src/agents/tools/common.js";
+import type { AnyAgentTool } from "openclaw/plugin-sdk";
 import { uploadFile } from "../drive-client.js";
 import type { OAuthConfig, AccountConfig, DriveConfig } from "../types.js";
 import { resolveAccountId } from "../types.js";
