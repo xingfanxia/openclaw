@@ -1,0 +1,31 @@
+{
+  "id": "selfie",
+  "name": "Selfie Generator",
+  "description": "Generate selfie images using Gemini 3 Pro with face reference images for consistency.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "geminiApiKey": {
+        "type": "string",
+        "description": "Gemini API key. Falls back to GEMINI_API_KEY env var."
+      },
+      "outputDir": {
+        "type": "string",
+        "description": "Directory to save generated images. Default: /tmp/openclaw-selfies"
+      },
+      "proactiveSelfie": {
+        "type": "object",
+        "description": "Probabilistic selfie on regular messages (not just heartbeat).",
+        "properties": {
+          "probability": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Probability (0-1) of injecting a selfie hint per message. 0 = disabled."
+          }
+        }
+      }
+    }
+  }
+}
