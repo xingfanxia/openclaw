@@ -17,6 +17,7 @@ import { buildOutboundMediaLoadOptions } from "../../media/load-options.js";
 import { isGifMedia, kindFromMime } from "../../media/mime.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import type { RuntimeEnv } from "../../runtime.js";
+import { sleep } from "../../utils.js";
 import { loadWebMedia } from "../../web/media.js";
 import type { TelegramInlineButtons } from "../button-types.js";
 import { splitTelegramCaption } from "../caption.js";
@@ -37,6 +38,18 @@ import { resolveTelegramReplyId, type TelegramThreadSpec } from "./helpers.js";
 
 const VOICE_FORBIDDEN_RE = /VOICE_MESSAGES_FORBIDDEN/;
 const CAPTION_TOO_LONG_RE = /caption is too long/i;
+
+function pickChunkDelayMs(params: { chunk: string; index: number; total: number }): number {
+  // Only add delay between chunks (never before the first or after the last).
+  if (params.total <= 1 || params.index <= 0 || params.index >= params.total) {
+    return 0;
+  }
+  const len = params.chunk.trim().length;
+  // Short chunks: quick cadence; long chunks: slightly longer "thinking" pause.
+  const min = len > 350 ? 450 : 220;
+  const max = len > 350 ? 1200 : 700;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
 type DeliveryProgress = {
   hasReplied: boolean;
@@ -149,6 +162,10 @@ async function deliverTextReply(params: {
     }
     markReplyApplied(params.progress, replyToForChunk);
     markDelivered(params.progress);
+    const delayMs = pickChunkDelayMs({ chunk: chunk.text, index: i, total: chunks.length });
+    if (delayMs > 0) {
+      await sleep(delayMs);
+    }
   }
   return firstDeliveredMessageId;
 }
@@ -184,6 +201,10 @@ async function sendPendingFollowUpText(params: {
     });
     markReplyApplied(params.progress, replyToForFollowUp);
     markDelivered(params.progress);
+    const delayMs = pickChunkDelayMs({ chunk: chunk.text, index: i, total: chunks.length });
+    if (delayMs > 0) {
+      await sleep(delayMs);
+    }
   }
 }
 

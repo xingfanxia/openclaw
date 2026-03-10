@@ -1,4 +1,9 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import {
+  chunkMarkdownTextWithMode,
+  resolveChunkMode,
+  resolveTextChunkLimit,
+} from "../../auto-reply/chunk.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { readBooleanParam } from "../../plugin-sdk/boolean-param.js";
 import { resolvePollMaxSelections } from "../../polls.js";
@@ -23,6 +28,7 @@ import {
 } from "../../telegram/send.js";
 import { getCacheStats, searchStickers } from "../../telegram/sticker-cache.js";
 import { resolveTelegramToken } from "../../telegram/token.js";
+import { sleep } from "../../utils.js";
 import {
   jsonResult,
   readNumberParam,
@@ -33,6 +39,30 @@ import {
 } from "./common.js";
 
 const TELEGRAM_BUTTON_STYLES: readonly TelegramButtonStyle[] = ["danger", "success", "primary"];
+
+function pickChunkDelayMs(params: { chunk: string; index: number; total: number }): number {
+  // Never sleep in tests (keeps unit tests fast + deterministic).
+  // Vitest sets VITEST=1; some harnesses set NODE_ENV=test.
+  const isTestEnv =
+    typeof process !== "undefined" &&
+    (process.env.VITEST !== undefined || process.env.NODE_ENV === "test");
+  if (isTestEnv) {
+    return 0;
+  }
+
+  // Only add delay between chunks (never before the first or after the last).
+  if (params.total <= 1 || params.index <= 0 || params.index >= params.total) {
+    return 0;
+  }
+  const len = params.chunk.trim().length;
+  const { min, max } =
+    len > 350
+      ? { min: 1600, max: 3800 }
+      : len > 120
+        ? { min: 1200, max: 3200 }
+        : { min: 900, max: 2600 };
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
 export function readTelegramButtons(
   params: Record<string, unknown>,
@@ -236,7 +266,7 @@ export async function handleTelegramAction(
         "Telegram bot token missing. Set TELEGRAM_BOT_TOKEN or channels.telegram.botToken.",
       );
     }
-    const result = await sendMessageTelegram(to, content, {
+    const sendOpts = {
       token,
       accountId: accountId ?? undefined,
       mediaUrl: mediaUrl || undefined,
@@ -247,7 +277,76 @@ export async function handleTelegramAction(
       quoteText: quoteText ?? undefined,
       asVoice: readBooleanParam(params, "asVoice"),
       silent: readBooleanParam(params, "silent"),
-    });
+    };
+    // Chunking:
+    // - Respect per-channel config (`channels.telegram.chunkMode` + `textChunkLimit`) for text-only sends.
+    // - Always cap at ~Telegram hard limit (4096) with a conservative 4000 to avoid rendering drift.
+    // - For media sends, force length-based chunking to avoid newline-driven multi-bubble spam.
+    //   This keeps selfie/photo sends to a single image bubble in normal cases, while still allowing
+    //   overflow protection for very long text.
+    const hardLimit = 4000;
+    const limit = Math.min(
+      resolveTextChunkLimit(cfg, "telegram", accountId ?? undefined, { fallbackLimit: hardLimit }),
+      hardLimit,
+    );
+    const mode = resolveChunkMode(cfg, "telegram", accountId ?? undefined);
+    const chunks = content ? chunkMarkdownTextWithMode(content, limit, mode) : [];
+    const planned: Array<{ text: string; opts: typeof sendOpts }> = [];
+
+    if (mediaUrl) {
+      const mediaChunks = content ? chunkMarkdownTextWithMode(content, limit, "length") : [];
+      if (!mediaChunks.length) {
+        // Media-only message.
+        planned.push({ text: "", opts: sendOpts });
+      } else {
+        planned.push({ text: mediaChunks[0] ?? "", opts: sendOpts });
+        for (let i = 1; i < mediaChunks.length; i += 1) {
+          planned.push({
+            text: mediaChunks[i] ?? "",
+            opts: {
+              ...sendOpts,
+              mediaUrl: undefined,
+              buttons: undefined,
+              replyToMessageId: undefined,
+              quoteText: undefined,
+            },
+          });
+        }
+      }
+    } else {
+      if (!chunks.length && content) {
+        planned.push({ text: content, opts: sendOpts });
+      } else {
+        for (let i = 0; i < chunks.length; i += 1) {
+          planned.push({
+            text: chunks[i] ?? "",
+            opts:
+              i === 0
+                ? sendOpts
+                : {
+                    ...sendOpts,
+                    buttons: undefined,
+                    replyToMessageId: undefined,
+                    quoteText: undefined,
+                  },
+          });
+        }
+      }
+    }
+
+    let result = { messageId: "", chatId: "" };
+    for (let i = 0; i < planned.length; i += 1) {
+      const item = planned[i];
+      result = await sendMessageTelegram(to, item.text, item.opts);
+      const delayMs = pickChunkDelayMs({
+        chunk: item.text,
+        index: i,
+        total: planned.length,
+      });
+      if (delayMs > 0) {
+        await sleep(delayMs);
+      }
+    }
     return jsonResult({
       ok: true,
       messageId: result.messageId,
