@@ -75,8 +75,12 @@ export function resolveEnvelopeFormatOptions(cfg?: OpenClawConfig): EnvelopeForm
 function normalizeEnvelopeOptions(options?: EnvelopeFormatOptions): NormalizedEnvelopeOptions {
   const includeTimestamp = options?.includeTimestamp !== false;
   const includeElapsed = options?.includeElapsed !== false;
+  // When no explicit envelopeTimezone is configured, prefer the user's timezone
+  // so that envelope timestamps match the agent's configured timezone (avoids
+  // showing UTC in Docker containers while the system prompt says PST).
+  const timezone = options?.timezone?.trim() || (options?.userTimezone?.trim() ? "user" : "local");
   return {
-    timezone: options?.timezone?.trim() || "local",
+    timezone,
     includeTimestamp,
     includeElapsed,
     userTimezone: options?.userTimezone,

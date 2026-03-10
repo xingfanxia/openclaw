@@ -10,6 +10,7 @@ import { createBrowserTool } from "./tools/browser-tool.js";
 import { createCanvasTool } from "./tools/canvas-tool.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { createCronTool } from "./tools/cron-tool.js";
+import { createCurrentTimeTool } from "./tools/current-time-tool.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
 import { createMessageTool } from "./tools/message-tool.js";
@@ -183,6 +184,7 @@ export function createOpenClawTools(
     createSubagentsTool({
       agentSessionKey: options?.agentSessionKey,
     }),
+    createCurrentTimeTool({ config: options?.config }),
     createSessionStatusTool({
       agentSessionKey: options?.agentSessionKey,
       config: options?.config,

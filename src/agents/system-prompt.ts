@@ -98,7 +98,12 @@ function buildTimeSection(params: { userTimezone?: string }) {
   if (!params.userTimezone) {
     return [];
   }
-  return ["## Current Date & Time", `Time zone: ${params.userTimezone}`, ""];
+  return [
+    "## Current Date & Time",
+    `Time zone: ${params.userTimezone}`,
+    `IMPORTANT: Always present times in ${params.userTimezone}. When tool results contain timestamps with UTC offsets (e.g. +00:00), convert them to ${params.userTimezone} before responding.`,
+    "",
+  ];
 }
 
 function buildReplyTagsSection(isMinimal: boolean) {
@@ -266,6 +271,7 @@ export function buildAgentSystemPrompt(params: {
       ? 'Spawn an isolated sub-agent or ACP coding session (runtime="acp" requires `agentId` unless `acp.defaultAgent` is configured; ACP harness ids follow acp.allowedAgents, not agents_list)'
       : "Spawn an isolated sub-agent session",
     subagents: "List, steer, or kill sub-agent runs for this requester session",
+    current_time: "Get the current date, time, day of week, and timezone",
     session_status:
       "Show a /status-equivalent status card (usage + time + Reasoning/Verbose/Elevated); use for model-use questions (📊 session_status); optional per-session model override",
     image: "Analyze an image with the configured image model",
@@ -294,6 +300,7 @@ export function buildAgentSystemPrompt(params: {
     "sessions_history",
     "sessions_send",
     "subagents",
+    "current_time",
     "session_status",
     "image",
   ];
@@ -443,6 +450,7 @@ export function buildAgentSystemPrompt(params: {
           "- sessions_history: fetch session history",
           "- sessions_send: send to another session",
           "- subagents: list/steer/kill sub-agent runs",
+          "- current_time: get the current date, time, and timezone (use for any time-sensitive question)",
           '- session_status: show usage/time/model state and answer "what model are we using?"',
         ].join("\n"),
     "TOOLS.md does not control tool availability; it is user guidance for how to use external tools.",
@@ -502,7 +510,7 @@ export function buildAgentSystemPrompt(params: {
       : "",
     params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal ? "" : "",
     userTimezone
-      ? "If you need the current date, time, or day of week, run session_status (📊 session_status)."
+      ? "If you need the current date, time, or day of week, run current_time (🕒 current_time)."
       : "",
     "## Workspace",
     `Your working directory is: ${displayWorkspaceDir}`,
