@@ -255,6 +255,15 @@ RUN mkdir -p /app/node_modules/@anthropic-ai /app/node_modules/@openai && \
 RUN mkdir -p /home/node/.claude /home/node/.codex && \
     chown -R node:node /home/node/.claude /home/node/.codex
 
+# Install runtime dependencies for fork extensions that need them.
+# These extensions have "dependencies" in their package.json but pnpm
+# workspace hoisting doesn't install them into the multi-stage dist image.
+RUN for ext in calendar-manager drive-manager gmail-manager; do \
+      if [ -f "/app/extensions/$ext/package.json" ]; then \
+        cd "/app/extensions/$ext" && npm install --omit=dev 2>/dev/null || true; \
+      fi; \
+    done
+
 # --- End fork customizations ---
 
 ENV NODE_ENV=production
