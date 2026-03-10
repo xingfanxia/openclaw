@@ -241,9 +241,9 @@ RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-agent-sdk \
 
 # Symlink globally-installed SDKs into /app/node_modules so bundled extension
 # code can resolve them (NODE_PATH works for CJS but NOT for ESM import())
-RUN ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk \
+RUN mkdir -p /app/node_modules/@anthropic-ai /app/node_modules/@openai && \
+    ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk \
       /app/node_modules/@anthropic-ai/claude-agent-sdk && \
-    mkdir -p /app/node_modules/@openai && \
     ln -s /usr/local/lib/node_modules/@openai/codex-sdk \
       /app/node_modules/@openai/codex-sdk && \
     chown -h node:node /app/node_modules/@anthropic-ai/claude-agent-sdk \
