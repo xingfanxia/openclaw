@@ -1,0 +1,10 @@
+{
+  "name": "@openclaw/security-filter",
+  "version": "1.0.0",
+  "description": "Secret detection and redaction for outgoing messages and tool calls",
+  "type": "module",
+  "main": "index.ts",
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  }
+}
