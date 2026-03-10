@@ -1,7 +1,6 @@
 import { rmSync } from "node:fs";
 import { completeSimple, type TextContent } from "@mariozechner/pi-ai";
 import { EdgeTTS } from "node-edge-tts";
-import { ensureCustomApiRegistered } from "../agents/custom-api-registry.js";
 import { getApiKeyForModel, requireApiKey } from "../agents/model-auth.js";
 import {
   buildModelAliasIndex,
@@ -9,7 +8,6 @@ import {
   resolveModelRefFromString,
   type ModelRef,
 } from "../agents/model-selection.js";
-import { createConfiguredOllamaStreamFn } from "../agents/ollama-stream.js";
 import { resolveModel } from "../agents/pi-embedded-runner/model.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type {
@@ -20,7 +18,6 @@ import type {
 } from "./tts.js";
 
 const DEFAULT_ELEVENLABS_BASE_URL = "https://api.elevenlabs.io";
-export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const TEMP_FILE_CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
 export function isValidVoiceId(voiceId: string): boolean {
@@ -31,14 +28,6 @@ function normalizeElevenLabsBaseUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim();
   if (!trimmed) {
     return DEFAULT_ELEVENLABS_BASE_URL;
-  }
-  return trimmed.replace(/\/+$/, "");
-}
-
-function normalizeOpenAITtsBaseUrl(baseUrl?: string): string {
-  const trimmed = baseUrl?.trim();
-  if (!trimmed) {
-    return DEFAULT_OPENAI_BASE_URL;
   }
   return trimmed.replace(/\/+$/, "");
 }
@@ -110,7 +99,6 @@ function parseNumberValue(value: string): number | undefined {
 export function parseTtsDirectives(
   text: string,
   policy: ResolvedTtsModelOverrides,
-  openaiBaseUrl?: string,
 ): TtsDirectiveParseResult {
   if (!policy.enabled) {
     return { cleanedText: text, overrides: {}, warnings: [], hasDirective: false };
@@ -120,6 +108,12 @@ export function parseTtsDirectives(
   const warnings: string[] = [];
   let cleanedText = text;
   let hasDirective = false;
+
+  // Strip bare [[tts]] tag (no colon/params) — used as tagged-mode signal.
+  cleanedText = cleanedText.replace(/\[\[tts\]\]\s*/gi, () => {
+    hasDirective = true;
+    return "";
+  });
 
   const blockRegex = /\[\[tts:text\]\]([\s\S]*?)\[\[\/tts:text\]\]/gi;
   cleanedText = cleanedText.replace(blockRegex, (_match, inner: string) => {
@@ -151,7 +145,13 @@ export function parseTtsDirectives(
             if (!policy.allowProvider) {
               break;
             }
-            if (rawValue === "openai" || rawValue === "elevenlabs" || rawValue === "edge") {
+            if (
+              rawValue === "openai" ||
+              rawValue === "elevenlabs" ||
+              rawValue === "edge" ||
+              rawValue === "volcano" ||
+              rawValue === "fishaudio"
+            ) {
               overrides.provider = rawValue;
             } else {
               warnings.push(`unsupported provider "${rawValue}"`);
@@ -163,7 +163,7 @@ export function parseTtsDirectives(
             if (!policy.allowVoice) {
               break;
             }
-            if (isValidOpenAIVoice(rawValue, openaiBaseUrl)) {
+            if (isValidOpenAIVoice(rawValue)) {
               overrides.openai = { ...overrides.openai, voice: rawValue };
             } else {
               warnings.push(`invalid OpenAI voice "${rawValue}"`);
@@ -192,7 +192,7 @@ export function parseTtsDirectives(
             if (!policy.allowModelId) {
               break;
             }
-            if (isValidOpenAIModel(rawValue, openaiBaseUrl)) {
+            if (isValidOpenAIModel(rawValue)) {
               overrides.openai = { ...overrides.openai, model: rawValue };
             } else {
               overrides.elevenlabs = { ...overrides.elevenlabs, modelId: rawValue };
@@ -328,6 +328,19 @@ export function parseTtsDirectives(
     return "";
   });
 
+  // Catch-all: strip any remaining [[tts: <content>]] blocks the specific regexes missed
+  // (e.g. when content contains [brackets] like emotion markers [害羞]).
+  // Capture the inner text so it can be used as ttsText for audio generation —
+  // prevents duplicate delivery when the model outputs both [[tts:...]] and plain text.
+  cleanedText = cleanedText.replace(/\[\[tts:([\s\S]*?)\]\]\s*/gi, (_match, inner: string) => {
+    hasDirective = true;
+    const trimmed = inner.trim();
+    if (trimmed && !overrides.ttsText) {
+      overrides.ttsText = trimmed;
+    }
+    return "";
+  });
+
   return {
     cleanedText,
     ttsText: overrides.ttsText,
@@ -347,14 +360,14 @@ export const OPENAI_TTS_MODELS = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"] as con
  * Note: Read at runtime (not module load) to support config.env loading.
  */
 function getOpenAITtsBaseUrl(): string {
-  return normalizeOpenAITtsBaseUrl(process.env.OPENAI_TTS_BASE_URL);
+  return (process.env.OPENAI_TTS_BASE_URL?.trim() || "https://api.openai.com/v1").replace(
+    /\/+$/,
+    "",
+  );
 }
 
-function isCustomOpenAIEndpoint(baseUrl?: string): boolean {
-  if (baseUrl != null) {
-    return normalizeOpenAITtsBaseUrl(baseUrl) !== DEFAULT_OPENAI_BASE_URL;
-  }
-  return getOpenAITtsBaseUrl() !== DEFAULT_OPENAI_BASE_URL;
+function isCustomOpenAIEndpoint(): boolean {
+  return getOpenAITtsBaseUrl() !== "https://api.openai.com/v1";
 }
 export const OPENAI_TTS_VOICES = [
   "alloy",
@@ -375,17 +388,17 @@ export const OPENAI_TTS_VOICES = [
 
 type OpenAiTtsVoice = (typeof OPENAI_TTS_VOICES)[number];
 
-export function isValidOpenAIModel(model: string, baseUrl?: string): boolean {
+export function isValidOpenAIModel(model: string): boolean {
   // Allow any model when using custom endpoint (e.g., Kokoro, LocalAI)
-  if (isCustomOpenAIEndpoint(baseUrl)) {
+  if (isCustomOpenAIEndpoint()) {
     return true;
   }
   return OPENAI_TTS_MODELS.includes(model as (typeof OPENAI_TTS_MODELS)[number]);
 }
 
-export function isValidOpenAIVoice(voice: string, baseUrl?: string): voice is OpenAiTtsVoice {
+export function isValidOpenAIVoice(voice: string): voice is OpenAiTtsVoice {
   // Allow any voice when using custom endpoint (e.g., Kokoro Chinese voices)
-  if (isCustomOpenAIEndpoint(baseUrl)) {
+  if (isCustomOpenAIEndpoint()) {
     return true;
   }
   return OPENAI_TTS_VOICES.includes(voice as OpenAiTtsVoice);
@@ -457,19 +470,6 @@ export async function summarizeText(params: {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      if (resolved.model.api === "ollama") {
-        const providerBaseUrl =
-          typeof cfg.models?.providers?.[resolved.model.provider]?.baseUrl === "string"
-            ? cfg.models.providers[resolved.model.provider]?.baseUrl
-            : undefined;
-        ensureCustomApiRegistered(
-          resolved.model.api,
-          createConfiguredOllamaStreamFn({
-            model: resolved.model,
-            providerBaseUrl,
-          }),
-        );
-      }
       const res = await completeSimple(
         resolved.model,
         {
@@ -616,18 +616,17 @@ export async function elevenLabsTTS(params: {
 export async function openaiTTS(params: {
   text: string;
   apiKey: string;
-  baseUrl: string;
   model: string;
   voice: string;
   responseFormat: "mp3" | "opus" | "pcm";
   timeoutMs: number;
 }): Promise<Buffer> {
-  const { text, apiKey, baseUrl, model, voice, responseFormat, timeoutMs } = params;
+  const { text, apiKey, model, voice, responseFormat, timeoutMs } = params;
 
-  if (!isValidOpenAIModel(model, baseUrl)) {
+  if (!isValidOpenAIModel(model)) {
     throw new Error(`Invalid model: ${model}`);
   }
-  if (!isValidOpenAIVoice(voice, baseUrl)) {
+  if (!isValidOpenAIVoice(voice)) {
     throw new Error(`Invalid voice: ${voice}`);
   }
 
@@ -635,7 +634,7 @@ export async function openaiTTS(params: {
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${baseUrl}/audio/speech`, {
+    const response = await fetch(`${getOpenAITtsBaseUrl()}/audio/speech`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -652,6 +651,122 @@ export async function openaiTTS(params: {
 
     if (!response.ok) {
       throw new Error(`OpenAI TTS API error (${response.status})`);
+    }
+
+    return Buffer.from(await response.arrayBuffer());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function volcanoTTS(params: {
+  text: string;
+  appId: string;
+  accessKey: string;
+  resourceId: string;
+  speaker: string;
+  timeoutMs: number;
+  contextTexts?: string[];
+}): Promise<Buffer> {
+  const { text, appId, accessKey, resourceId, speaker, timeoutMs, contextTexts } = params;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch("https://openspeech.bytedance.com/api/v3/tts/unidirectional", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-App-Id": appId,
+        "X-Api-Access-Key": accessKey,
+        "X-Api-Resource-Id": resourceId,
+      },
+      body: JSON.stringify({
+        user: { uid: "openclaw-tts" },
+        req_params: {
+          text,
+          speaker,
+          audio_params: {
+            format: "mp3",
+            sample_rate: 24000,
+          },
+          ...(contextTexts?.length
+            ? { additions: JSON.stringify({ context_texts: contextTexts }) }
+            : {}),
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Volcano TTS API error (${response.status})`);
+    }
+
+    const body = await response.text();
+    const chunks: Buffer[] = [];
+
+    for (const line of body.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      let parsed: { code: number; data: string | null };
+      try {
+        parsed = JSON.parse(trimmed) as { code: number; data: string | null };
+      } catch {
+        continue;
+      }
+      if (parsed.code === 0 && parsed.data) {
+        chunks.push(Buffer.from(parsed.data, "base64"));
+      } else if (parsed.code === 20000000) {
+        // End-of-stream marker
+        break;
+      } else if (parsed.code !== 0) {
+        throw new Error(`Volcano TTS stream error (code ${parsed.code})`);
+      }
+    }
+
+    if (chunks.length === 0) {
+      throw new Error("Volcano TTS returned no audio data");
+    }
+
+    return Buffer.concat(chunks);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function fishAudioTTS(params: {
+  text: string;
+  apiKey: string;
+  referenceId: string;
+  timeoutMs: number;
+}): Promise<Buffer> {
+  const { text, apiKey, referenceId, timeoutMs } = params;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch("https://api.fish.audio/v1/tts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        model: "s1",
+      },
+      body: JSON.stringify({
+        text,
+        reference_id: referenceId || undefined,
+        format: "opus",
+        opus_bitrate: 64,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Fish Audio TTS API error (${response.status})`);
     }
 
     return Buffer.from(await response.arrayBuffer());

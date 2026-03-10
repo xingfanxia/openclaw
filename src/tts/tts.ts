@@ -14,7 +14,6 @@ import type { ReplyPayload } from "../auto-reply/types.js";
 import { normalizeChannelId } from "../channels/plugins/index.js";
 import type { ChannelId } from "../channels/plugins/types.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { normalizeResolvedSecretInputString } from "../config/types.secrets.js";
 import type {
   TtsConfig,
   TtsAutoMode,
@@ -28,9 +27,9 @@ import { stripMarkdown } from "../line/markdown-to-line.js";
 import { isVoiceCompatibleAudio } from "../media/audio.js";
 import { CONFIG_DIR, resolveUserPath } from "../utils.js";
 import {
-  DEFAULT_OPENAI_BASE_URL,
   edgeTTS,
   elevenLabsTTS,
+  fishAudioTTS,
   inferEdgeExtension,
   isValidOpenAIModel,
   isValidOpenAIVoice,
@@ -41,6 +40,7 @@ import {
   parseTtsDirectives,
   scheduleCleanup,
   summarizeText,
+  volcanoTTS,
 } from "./tts-core.js";
 export { OPENAI_TTS_MODELS, OPENAI_TTS_VOICES } from "./tts-core.js";
 
@@ -57,6 +57,62 @@ const DEFAULT_OPENAI_VOICE = "alloy";
 const DEFAULT_EDGE_VOICE = "en-US-MichelleNeural";
 const DEFAULT_EDGE_LANG = "en-US";
 const DEFAULT_EDGE_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
+
+const DEFAULT_VOLCANO_SPEAKER = "zh_female_linzhiling_mars_bigtts";
+const DEFAULT_VOLCANO_RESOURCE_ID = "seed-tts-1.0";
+const DEFAULT_VOLCANO_V2_RESOURCE_ID = "volc.seedicl.default";
+
+const VOLCANO_V2_RESOURCE_PATTERNS = ["seedicl", "seed-tts-2.0", "seed-icl-2.0"];
+
+export type EmotionSegment = { contextText?: string; text: string };
+
+/** Check if the volcano config indicates v2 (seed-tts-2.0 with emotion control). */
+export function isVolcanoV2(config: {
+  volcano?: { version?: string; resourceId?: string };
+}): boolean {
+  if (config.volcano?.version === "v2") {
+    return true;
+  }
+  const rid = config.volcano?.resourceId?.toLowerCase() ?? "";
+  return VOLCANO_V2_RESOURCE_PATTERNS.some((p) => rid.includes(p));
+}
+
+/** Strip `[emotion]` markers from text, leaving only the spoken content.
+ *  Skips double-bracket directives like `[[reply_to_current]]` and `[[tts:…]]`. */
+export function stripEmotionMarkers(text: string): string {
+  return text
+    .replace(/(?<!\[)\[(?!\[)[^\][]+\](?!\])/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/**
+ * Parse text with `[emotion instruction]` markers into per-sentence segments.
+ *
+ * Example: `[开心]你好呀！[伤心]我好难过。` →
+ *   [{ contextText: "开心", text: "你好呀！" }, { contextText: "伤心", text: "我好难过。" }]
+ */
+export function parseVolcanoEmotionSegments(text: string): EmotionSegment[] {
+  const segments: EmotionSegment[] = [];
+  // Split on [xxx] markers, capturing the bracket content
+  const parts = text.split(/\[([^\]]+)\]/);
+  // parts alternates: text, marker, text, marker, text ...
+  let pendingContext: string | undefined;
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      // Text segment
+      const t = parts[i].trim();
+      if (t) {
+        segments.push({ contextText: pendingContext, text: t });
+        pendingContext = undefined;
+      }
+    } else {
+      // Marker (odd index = captured group)
+      pendingContext = parts[i];
+    }
+  }
+  return segments;
+}
 
 const DEFAULT_ELEVENLABS_VOICE_SETTINGS = {
   stability: 0.5,
@@ -114,7 +170,6 @@ export type ResolvedTtsConfig = {
   };
   openai: {
     apiKey?: string;
-    baseUrl: string;
     model: string;
     voice: string;
   };
@@ -130,6 +185,17 @@ export type ResolvedTtsConfig = {
     saveSubtitles: boolean;
     proxy?: string;
     timeoutMs?: number;
+  };
+  volcano: {
+    appId?: string;
+    accessKey?: string;
+    resourceId: string;
+    speaker: string;
+    version?: "v1" | "v2";
+  };
+  fishaudio: {
+    apiKey?: string;
+    referenceId: string;
   };
   prefsPath?: string;
   maxTextLength: number;
@@ -268,10 +334,7 @@ export function resolveTtsConfig(cfg: OpenClawConfig): ResolvedTtsConfig {
     summaryModel: raw.summaryModel?.trim() || undefined,
     modelOverrides: resolveModelOverridePolicy(raw.modelOverrides),
     elevenlabs: {
-      apiKey: normalizeResolvedSecretInputString({
-        value: raw.elevenlabs?.apiKey,
-        path: "messages.tts.elevenlabs.apiKey",
-      }),
+      apiKey: raw.elevenlabs?.apiKey,
       baseUrl: raw.elevenlabs?.baseUrl?.trim() || DEFAULT_ELEVENLABS_BASE_URL,
       voiceId: raw.elevenlabs?.voiceId ?? DEFAULT_ELEVENLABS_VOICE_ID,
       modelId: raw.elevenlabs?.modelId ?? DEFAULT_ELEVENLABS_MODEL_ID,
@@ -292,16 +355,7 @@ export function resolveTtsConfig(cfg: OpenClawConfig): ResolvedTtsConfig {
       },
     },
     openai: {
-      apiKey: normalizeResolvedSecretInputString({
-        value: raw.openai?.apiKey,
-        path: "messages.tts.openai.apiKey",
-      }),
-      // Config > env var > default; strip trailing slashes for consistency.
-      baseUrl: (
-        raw.openai?.baseUrl?.trim() ||
-        process.env.OPENAI_TTS_BASE_URL?.trim() ||
-        DEFAULT_OPENAI_BASE_URL
-      ).replace(/\/+$/, ""),
+      apiKey: raw.openai?.apiKey,
       model: raw.openai?.model ?? DEFAULT_OPENAI_MODEL,
       voice: raw.openai?.voice ?? DEFAULT_OPENAI_VOICE,
     },
@@ -317,6 +371,21 @@ export function resolveTtsConfig(cfg: OpenClawConfig): ResolvedTtsConfig {
       saveSubtitles: raw.edge?.saveSubtitles ?? false,
       proxy: raw.edge?.proxy?.trim() || undefined,
       timeoutMs: raw.edge?.timeoutMs,
+    },
+    volcano: {
+      appId: raw.volcano?.appId || process.env.VOLC_TTS_APP_ID,
+      accessKey: raw.volcano?.accessKey || process.env.VOLC_TTS_ACCESS_TOKEN,
+      resourceId:
+        raw.volcano?.resourceId ??
+        (raw.volcano?.version === "v2"
+          ? DEFAULT_VOLCANO_V2_RESOURCE_ID
+          : DEFAULT_VOLCANO_RESOURCE_ID),
+      speaker: raw.volcano?.speaker ?? DEFAULT_VOLCANO_SPEAKER,
+      version: raw.volcano?.version,
+    },
+    fishaudio: {
+      apiKey: raw.fishaudio?.apiKey || process.env.FISH_API_KEY,
+      referenceId: raw.fishaudio?.referenceId ?? "",
     },
     prefsPath: raw.prefsPath,
     maxTextLength: raw.maxTextLength ?? DEFAULT_MAX_TEXT_LENGTH,
@@ -369,6 +438,7 @@ export function buildTtsSystemPromptHint(cfg: OpenClawConfig): string | undefine
   if (autoMode === "off") {
     return undefined;
   }
+  const provider = getTtsProvider(config, prefsPath);
   const maxLength = getTtsMaxLength(prefsPath);
   const summarize = isSummarizationEnabled(prefsPath) ? "on" : "off";
   const autoHint =
@@ -377,14 +447,76 @@ export function buildTtsSystemPromptHint(cfg: OpenClawConfig): string | undefine
       : autoMode === "tagged"
         ? "Only use TTS when you include [[tts]] or [[tts:text]] tags."
         : undefined;
-  return [
+  const lines = [
     "Voice (TTS) is enabled.",
     autoHint,
     `Keep spoken text ≤${maxLength} chars to avoid auto-summary (summary ${summarize}).`,
     "Use [[tts:...]] and optional [[tts:text]]...[[/tts:text]] to control voice/expressiveness.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ];
+  const volcanoV2Active = provider === "volcano" && isVolcanoV2(config);
+  const fishConfigured = isTtsProviderConfigured(config, "fishaudio");
+  const dualProvider = volcanoV2Active && fishConfigured;
+
+  if (dualProvider) {
+    // Both Volcano v2 and Fish Audio available — emit routing guidance
+    lines.push(
+      "",
+      "Content-based voice routing (tts tool has a 'provider' parameter):",
+      "- Default (omit provider param): Volcano (豆包) — use [emotion] bracket markers.",
+      '- For intimate/explicit/sensitive content: set provider="fishaudio" — 豆包 will censor these.',
+      "- Fish Audio uses (emotion) parenthesis markers instead.",
+      "",
+      "Volcano emotion format (default provider):",
+      "- [开心], [伤心], [愤怒], [害羞], [温柔], or voice commands like [用温柔甜蜜的声音]",
+      "- Example: [开心]你好呀！[伤心]好难过。",
+      "- Every sentence MUST have a [bracket] marker.",
+      "- NEVER include [emotion] markers in text messages — ONLY in tts tool calls.",
+      "",
+      'Fish Audio emotion format (provider="fishaudio"):',
+      "- Prepend (emotion) in parentheses: (happy), (sad), (shy), (flirty), (seductive), (whispering), (panting)",
+      "- Combine: (shy)(whispering) 好吧... or (flirty)(soft tone) 想你了~",
+      "- NEVER mix bracket and parenthesis formats — match the provider you're calling.",
+    );
+  } else if (provider === "fishaudio") {
+    lines.push(
+      "",
+      "Fish Audio emotion markers (IMPORTANT — use these in voice text for expressive TTS):",
+      "- Prepend emotion tags in parentheses at the start of sentences or clauses.",
+      "- Basic emotions: (happy), (sad), (angry), (excited), (calm), (nervous), (surprised), (frustrated), (shy)",
+      "- Advanced: (flirty), (sarcastic), (nostalgic), (resigned), (playful), (seductive), (admiring), (curious), (amused)",
+      "- Tone: (whispering), (shouting), (screaming), (soft tone), (in a hurry)",
+      "- Effects: (laughing), (chuckling), (sobbing), (sighing), (panting), (gasping)",
+      "- Combine multiple: (angry)(shouting) 啊啊啊！ or (shy)(whispering) 好吧...",
+      "- Match emotion to text content naturally — frustrated text gets (frustrated), flirty text gets (flirty), etc.",
+      "- Markers are free (no extra cost/latency) and dramatically improve voice expressiveness.",
+    );
+  } else if (volcanoV2Active) {
+    lines.push(
+      "",
+      "Volcano v2 emotion control (ONLY for voice/TTS — never use these markers in text messages):",
+      "- When sending voice via the tts tool, prepend an emotion instruction in square brackets before each sentence.",
+      "- Emotion labels: [开心], [伤心], [愤怒], [害羞], [温柔]",
+      "- Voice commands: [用温柔甜蜜的声音], [用冷淡不耐烦的语气], [用激动兴奋的声音]",
+      "- Context descriptions: [她正在生气地质问对方], [他刚收到好消息非常开心]",
+      "- Example: [开心]你好呀！今天天气真好！[伤心]可是我的猫生病了。",
+      "- Every sentence in voice text MUST have a [bracket] marker — each sentence becomes a separate voice message.",
+      "- NEVER include [emotion] markers in text messages sent via the message tool — they are ONLY for the tts tool.",
+    );
+  }
+  if (autoMode === "tagged") {
+    lines.push(
+      "",
+      "When to send voice messages:",
+      '- When the user asks to hear your voice ("发个语音", "想听你的声音", "say it").',
+      "- Proactively when you feel voice fits better than text — no scene restriction, use your judgment.",
+      "- Keep voice text conversational and natural; strip emoji/symbols (TTS cannot read them).",
+      "- Do not send voice for every message — most replies should stay as text.",
+      "- Never use voice for code, lists, or information-dense content.",
+      "- IMPORTANT: Always use the tts tool to send voice messages. Do NOT use [[tts]] inline tags — they will not produce audio.",
+      "- Call the tts tool with the full text you want spoken, then reply with NO_REPLY.",
+    );
+  }
+  return lines.filter(Boolean).join("\n");
 }
 
 function readPrefs(prefsPath: string): TtsUserPrefs {
@@ -456,6 +588,12 @@ export function getTtsProvider(config: ResolvedTtsConfig, prefsPath: string): Tt
   if (resolveTtsApiKey(config, "elevenlabs")) {
     return "elevenlabs";
   }
+  if (resolveTtsApiKey(config, "fishaudio")) {
+    return "fishaudio";
+  }
+  if (resolveTtsApiKey(config, "volcano")) {
+    return "volcano";
+  }
   return "edge";
 }
 
@@ -495,11 +633,8 @@ export function setLastTtsAttempt(entry: TtsStatusEntry | undefined): void {
   lastTtsAttempt = entry;
 }
 
-/** Channels that require opus audio and support voice-bubble playback */
-const VOICE_BUBBLE_CHANNELS = new Set(["telegram", "feishu", "whatsapp"]);
-
 function resolveOutputFormat(channelId?: string | null) {
-  if (channelId && VOICE_BUBBLE_CHANNELS.has(channelId)) {
+  if (channelId === "telegram") {
     return TELEGRAM_OUTPUT;
   }
   return DEFAULT_OUTPUT;
@@ -523,10 +658,18 @@ export function resolveTtsApiKey(
   if (provider === "openai") {
     return config.openai.apiKey || process.env.OPENAI_API_KEY;
   }
+  if (provider === "fishaudio") {
+    return config.fishaudio.apiKey;
+  }
+  if (provider === "volcano") {
+    const appId = config.volcano.appId;
+    const accessKey = config.volcano.accessKey;
+    return appId && accessKey ? appId : undefined;
+  }
   return undefined;
 }
 
-export const TTS_PROVIDERS = ["openai", "elevenlabs", "edge"] as const;
+export const TTS_PROVIDERS = ["openai", "elevenlabs", "fishaudio", "edge", "volcano"] as const;
 
 export function resolveTtsProviderOrder(primary: TtsProvider): TtsProvider[] {
   return [primary, ...TTS_PROVIDERS.filter((provider) => provider !== primary)];
@@ -535,6 +678,12 @@ export function resolveTtsProviderOrder(primary: TtsProvider): TtsProvider[] {
 export function isTtsProviderConfigured(config: ResolvedTtsConfig, provider: TtsProvider): boolean {
   if (provider === "edge") {
     return config.edge.enabled;
+  }
+  if (provider === "volcano") {
+    return Boolean(config.volcano.appId && config.volcano.accessKey);
+  }
+  if (provider === "fishaudio") {
+    return Boolean(config.fishaudio.apiKey);
   }
   return Boolean(resolveTtsApiKey(config, provider));
 }
@@ -545,13 +694,6 @@ function formatTtsProviderError(provider: TtsProvider, err: unknown): string {
     return `${provider}: request timed out`;
   }
   return `${provider}: ${error.message}`;
-}
-
-function buildTtsFailureResult(errors: string[]): { success: false; error: string } {
-  return {
-    success: false,
-    error: `TTS conversion failed: ${errors.join("; ") || "no providers available"}`,
-  };
 }
 
 export async function textToSpeech(params: {
@@ -653,6 +795,101 @@ export async function textToSpeech(params: {
         };
       }
 
+      if (provider === "fishaudio") {
+        const fishApiKey = config.fishaudio.apiKey;
+        if (!fishApiKey) {
+          errors.push("fishaudio: no API key");
+          continue;
+        }
+
+        const audioBuffer = await fishAudioTTS({
+          text: params.text,
+          apiKey: fishApiKey,
+          referenceId: config.fishaudio.referenceId,
+          timeoutMs: config.timeoutMs,
+        });
+
+        const latencyMs = Date.now() - providerStart;
+        const tempRoot = resolvePreferredOpenClawTmpDir();
+        mkdirSync(tempRoot, { recursive: true, mode: 0o700 });
+        const tempDir = mkdtempSync(path.join(tempRoot, "tts-"));
+        const audioPath = path.join(tempDir, `voice-${Date.now()}.ogg`);
+        writeFileSync(audioPath, audioBuffer);
+        scheduleCleanup(tempDir);
+
+        return {
+          success: true,
+          audioPath,
+          latencyMs,
+          provider,
+          outputFormat: "opus",
+          voiceCompatible: true,
+        };
+      }
+
+      if (provider === "volcano") {
+        const { appId, accessKey } = config.volcano;
+        if (!appId || !accessKey) {
+          errors.push("volcano: no appId or accessKey");
+          continue;
+        }
+
+        let audioBuffer: Buffer;
+        const v2 = isVolcanoV2(config);
+
+        if (v2) {
+          // V2: split into emotion segments, call API per-segment, concatenate MP3 buffers
+          const segments = parseVolcanoEmotionSegments(params.text);
+          logVerbose(
+            `TTS: volcano v2 parsed ${segments.length} segments: ${JSON.stringify(segments.map((s) => ({ ctx: s.contextText, len: s.text.length })))}`,
+          );
+          if (segments.length === 0) {
+            errors.push("volcano v2: no segments parsed");
+            continue;
+          }
+          const chunks: Buffer[] = [];
+          for (const seg of segments) {
+            const buf = await volcanoTTS({
+              text: seg.text,
+              appId,
+              accessKey,
+              resourceId: config.volcano.resourceId,
+              speaker: config.volcano.speaker,
+              timeoutMs: config.timeoutMs,
+              contextTexts: seg.contextText ? [seg.contextText] : undefined,
+            });
+            chunks.push(buf);
+          }
+          audioBuffer = Buffer.concat(chunks);
+        } else {
+          audioBuffer = await volcanoTTS({
+            text: params.text,
+            appId,
+            accessKey,
+            resourceId: config.volcano.resourceId,
+            speaker: config.volcano.speaker,
+            timeoutMs: config.timeoutMs,
+          });
+        }
+
+        const latencyMs = Date.now() - providerStart;
+        const tempRoot = resolvePreferredOpenClawTmpDir();
+        mkdirSync(tempRoot, { recursive: true, mode: 0o700 });
+        const tempDir = mkdtempSync(path.join(tempRoot, "tts-"));
+        const audioPath = path.join(tempDir, `voice-${Date.now()}.mp3`);
+        writeFileSync(audioPath, audioBuffer);
+        scheduleCleanup(tempDir);
+
+        return {
+          success: true,
+          audioPath,
+          latencyMs,
+          provider,
+          outputFormat: "mp3",
+          voiceCompatible: v2, // v2 MP3 works for Telegram voice bubbles
+        };
+      }
+
       const apiKey = resolveTtsApiKey(config, provider);
       if (!apiKey) {
         errors.push(`${provider}: no API key`);
@@ -689,7 +926,6 @@ export async function textToSpeech(params: {
         audioBuffer = await openaiTTS({
           text: params.text,
           apiKey,
-          baseUrl: config.openai.baseUrl,
           model: openaiModelOverride ?? config.openai.model,
           voice: openaiVoiceOverride ?? config.openai.voice,
           responseFormat: output.openai,
@@ -719,7 +955,10 @@ export async function textToSpeech(params: {
     }
   }
 
-  return buildTtsFailureResult(errors);
+  return {
+    success: false,
+    error: `TTS conversion failed: ${errors.join("; ") || "no providers available"}`,
+  };
 }
 
 export async function textToSpeechTelephony(params: {
@@ -747,6 +986,14 @@ export async function textToSpeechTelephony(params: {
     try {
       if (provider === "edge") {
         errors.push("edge: unsupported for telephony");
+        continue;
+      }
+      if (provider === "volcano") {
+        errors.push("volcano: unsupported for telephony");
+        continue;
+      }
+      if (provider === "fishaudio") {
+        errors.push("fishaudio: unsupported for telephony");
         continue;
       }
 
@@ -786,7 +1033,6 @@ export async function textToSpeechTelephony(params: {
       const audioBuffer = await openaiTTS({
         text: params.text,
         apiKey,
-        baseUrl: config.openai.baseUrl,
         model: config.openai.model,
         voice: config.openai.voice,
         responseFormat: output.format,
@@ -806,7 +1052,56 @@ export async function textToSpeechTelephony(params: {
     }
   }
 
-  return buildTtsFailureResult(errors);
+  return {
+    success: false,
+    error: `TTS conversion failed: ${errors.join("; ") || "no providers available"}`,
+  };
+}
+
+/**
+ * Strip roleplay action markers and onomatopoeia that should not be read aloud.
+ *
+ * Covers:
+ *  - Parenthetical actions/emotions: (笑), (sighs), (想了想)
+ *  - Full-width parentheses: （鼓掌）
+ *  - Square-bracket stage directions: [laughs], [action]
+ *  - CJK brackets: 【动作】, 〔笑〕
+ *  - Emoji-only parenthetical clusters: (😤), (🎉🎉)
+ *
+ * Does NOT strip parenthetical content that looks like real speech — only
+ * short, non-sentence fragments (≤12 chars) that match action/emote patterns.
+ */
+export function stripActionMarkers(text: string): string {
+  let result = text;
+
+  // Parenthetical short actions: (笑), (sighs heavily), (想了想), （鼓掌）
+  // Only strip when content is short (≤12 chars) and doesn't look like a real sentence.
+  result = result.replace(/[（(][^)）]{1,12}[)）]/g, (match) => {
+    const inner = match.slice(1, -1).trim();
+    // Keep if it contains digits (likely data), or looks like a real clause with punctuation
+    if (/\d/.test(inner) || /[.?!。？！，,]/.test(inner)) {
+      return match;
+    }
+    return "";
+  });
+
+  // Square-bracket stage directions: [laughs], [action description]
+  result = result.replace(/\[[^\]]{1,12}\]/g, (match) => {
+    const inner = match.slice(1, -1).trim();
+    if (/\d/.test(inner) || /[.?!。？！，,]/.test(inner)) {
+      return match;
+    }
+    return "";
+  });
+
+  // CJK brackets: 【动作】, 〔笑〕
+  result = result.replace(/[【〔][^】〕]{1,12}[】〕]/g, "");
+
+  // Clean up leftover whitespace
+  result = result.replace(/\s{2,}/g, " ");
+  result = result.replace(/^\s+|\s+$/gm, (m) => m.replace(/ +/g, ""));
+
+  return result.trim();
 }
 
 export async function maybeApplyTtsToPayload(params: {
@@ -829,15 +1124,22 @@ export async function maybeApplyTtsToPayload(params: {
   }
 
   const text = params.payload.text ?? "";
-  const directives = parseTtsDirectives(text, config.modelOverrides, config.openai.baseUrl);
+  const directives = parseTtsDirectives(text, config.modelOverrides);
   if (directives.warnings.length > 0) {
     logVerbose(`TTS: ignored directive overrides (${directives.warnings.join("; ")})`);
   }
 
   const cleanedText = directives.cleanedText;
   const trimmedCleaned = cleanedText.trim();
-  const visibleText = trimmedCleaned.length > 0 ? trimmedCleaned : "";
+  let visibleText = trimmedCleaned.length > 0 ? trimmedCleaned : "";
   const ttsText = directives.ttsText?.trim() || visibleText;
+
+  // Strip [emotion] markers from visible text when volcano v2 is active
+  const activeProvider = directives.overrides?.provider ?? getTtsProvider(config, prefsPath);
+  const volcanoV2 = activeProvider === "volcano" && isVolcanoV2(config);
+  if (volcanoV2) {
+    visibleText = stripEmotionMarkers(visibleText);
+  }
 
   const nextPayload =
     visibleText === text.trim()
@@ -908,6 +1210,11 @@ export async function maybeApplyTtsToPayload(params: {
   }
 
   textForAudio = stripMarkdown(textForAudio).trim(); // strip markdown for TTS (### → "hashtag" etc.)
+  // Fish Audio S1 uses parenthetical emotion markers like (angry)(whispering) — don't strip them.
+  // Volcano v2 [bracket] markers are kept for textToSpeech() to parse internally.
+  if (activeProvider !== "fishaudio" && !volcanoV2) {
+    textForAudio = stripActionMarkers(textForAudio); // strip roleplay actions like (笑), [sighs], 【动作】
+  }
   if (textForAudio.length < 10) {
     return nextPayload;
   }
@@ -932,8 +1239,7 @@ export async function maybeApplyTtsToPayload(params: {
     };
 
     const channelId = resolveChannelId(params.channel);
-    const shouldVoice =
-      channelId !== null && VOICE_BUBBLE_CHANNELS.has(channelId) && result.voiceCompatible === true;
+    const shouldVoice = channelId === "telegram" && result.voiceCompatible === true;
     const finalPayload = {
       ...nextPayload,
       mediaUrl: result.audioPath,
@@ -953,6 +1259,200 @@ export async function maybeApplyTtsToPayload(params: {
   const latency = Date.now() - ttsStart;
   logVerbose(`TTS: conversion failed after ${latency}ms (${result.error ?? "unknown"}).`);
   return nextPayload;
+}
+
+/**
+ * Generate multiple TTS audio segments for volcano v2 emotion control.
+ * For non-v2 providers, delegates to `textToSpeech()` and wraps result in an array.
+ */
+export async function textToSpeechMulti(params: {
+  text: string;
+  cfg: OpenClawConfig;
+  prefsPath?: string;
+  channel?: string;
+  overrides?: TtsDirectiveOverrides;
+}): Promise<TtsResult[]> {
+  const config = resolveTtsConfig(params.cfg);
+  const prefsPath = params.prefsPath ?? resolveTtsPrefsPath(config);
+  const activeProvider = params.overrides?.provider ?? getTtsProvider(config, prefsPath);
+  const volcanoV2 = activeProvider === "volcano" && isVolcanoV2(config);
+
+  if (!volcanoV2) {
+    const result = await textToSpeech(params);
+    return [result];
+  }
+
+  // Parse emotion segments
+  const segments = parseVolcanoEmotionSegments(params.text);
+  logVerbose(
+    `TTS: volcano v2 parsed ${segments.length} segments: ${JSON.stringify(segments.map((s) => ({ ctx: s.contextText, len: s.text.length })))}`,
+  );
+  if (segments.length === 0) {
+    return [{ success: false, error: "No text segments to synthesize" }];
+  }
+
+  const { appId, accessKey, resourceId, speaker } = config.volcano;
+  if (!appId || !accessKey) {
+    return [{ success: false, error: "volcano: no appId or accessKey" }];
+  }
+
+  const results: TtsResult[] = [];
+  for (const segment of segments) {
+    const segmentStart = Date.now();
+    try {
+      const audioBuffer = await volcanoTTS({
+        text: segment.text,
+        appId,
+        accessKey,
+        resourceId,
+        speaker,
+        timeoutMs: config.timeoutMs,
+        contextTexts: segment.contextText ? [segment.contextText] : undefined,
+      });
+
+      const tempRoot = resolvePreferredOpenClawTmpDir();
+      mkdirSync(tempRoot, { recursive: true, mode: 0o700 });
+      const tempDir = mkdtempSync(path.join(tempRoot, "tts-"));
+      const audioPath = path.join(tempDir, `voice-${Date.now()}.mp3`);
+      writeFileSync(audioPath, audioBuffer);
+      scheduleCleanup(tempDir);
+
+      results.push({
+        success: true,
+        audioPath,
+        latencyMs: Date.now() - segmentStart,
+        provider: "volcano",
+        outputFormat: "mp3",
+        voiceCompatible: true,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      logVerbose(`TTS: volcano v2 segment failed: ${error}`);
+      results.push({ success: false, error: `volcano v2: ${error}` });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Apply TTS to a payload, returning multiple payloads for volcano v2 multi-segment.
+ * For non-v2 providers, delegates to `maybeApplyTtsToPayload()` and wraps result in an array.
+ */
+export async function maybeApplyTtsToPayloads(params: {
+  payload: ReplyPayload;
+  cfg: OpenClawConfig;
+  channel?: string;
+  kind?: "tool" | "block" | "final";
+  inboundAudio?: boolean;
+  ttsAuto?: string;
+}): Promise<ReplyPayload[]> {
+  const config = resolveTtsConfig(params.cfg);
+  const prefsPath = resolveTtsPrefsPath(config);
+  const autoMode = resolveTtsAutoMode({
+    config,
+    prefsPath,
+    sessionAuto: params.ttsAuto,
+  });
+  if (autoMode === "off") {
+    return [params.payload];
+  }
+
+  const activeProvider = getTtsProvider(config, prefsPath);
+  const volcanoV2 = activeProvider === "volcano" && isVolcanoV2(config);
+
+  if (!volcanoV2) {
+    const result = await maybeApplyTtsToPayload(params);
+    return [result];
+  }
+
+  // Volcano v2: multi-segment TTS
+  logVerbose("TTS: volcano v2 multi-segment path activated");
+  const text = params.payload.text ?? "";
+  const directives = parseTtsDirectives(text, config.modelOverrides);
+  const cleanedText = directives.cleanedText;
+  const trimmedCleaned = cleanedText.trim();
+  const visibleText = trimmedCleaned.length > 0 ? trimmedCleaned : "";
+  const ttsText = directives.ttsText?.trim() || visibleText;
+
+  // Strip [emotion] markers from the visible text — they are for TTS only.
+  const displayText = stripEmotionMarkers(visibleText);
+  const nextPayload = {
+    ...params.payload,
+    text: displayText.length > 0 ? displayText : undefined,
+  };
+
+  if (autoMode === "tagged" && !directives.hasDirective) {
+    return [nextPayload];
+  }
+  if (autoMode === "inbound" && params.inboundAudio !== true) {
+    return [nextPayload];
+  }
+  const mode = config.mode ?? "final";
+  if (mode === "final" && params.kind && params.kind !== "final") {
+    return [nextPayload];
+  }
+  if (!ttsText.trim()) {
+    return [nextPayload];
+  }
+  if (params.payload.mediaUrl || (params.payload.mediaUrls?.length ?? 0) > 0) {
+    return [nextPayload];
+  }
+  if (text.includes("MEDIA:")) {
+    return [nextPayload];
+  }
+  if (ttsText.trim().length < 10) {
+    return [nextPayload];
+  }
+
+  let textForAudio = stripMarkdown(ttsText.trim()).trim();
+  // Don't strip action markers — volcano v2 uses [bracket] markers for emotion
+
+  const ttsResults = await textToSpeechMulti({
+    text: textForAudio,
+    cfg: params.cfg,
+    prefsPath,
+    channel: params.channel,
+    overrides: directives.overrides,
+  });
+
+  const successResults = ttsResults.filter((r) => r.success && r.audioPath);
+  if (successResults.length === 0) {
+    logVerbose(`TTS: volcano v2 all segments failed`);
+    return [nextPayload];
+  }
+
+  const channelId = resolveChannelId(params.channel);
+  const payloads: ReplyPayload[] = [];
+  for (let i = 0; i < successResults.length; i++) {
+    const result = successResults[i];
+    const shouldVoice = channelId === "telegram" && result.voiceCompatible === true;
+    if (i === 0) {
+      // First payload keeps the visible text
+      payloads.push({
+        ...nextPayload,
+        mediaUrl: result.audioPath,
+        audioAsVoice: shouldVoice || params.payload.audioAsVoice,
+      });
+    } else {
+      // Subsequent payloads are audio-only
+      payloads.push({
+        mediaUrl: result.audioPath,
+        audioAsVoice: shouldVoice,
+      });
+    }
+  }
+
+  lastTtsAttempt = {
+    timestamp: Date.now(),
+    success: true,
+    textLength: text.length,
+    summarized: false,
+    provider: "volcano",
+    latencyMs: successResults.reduce((sum, r) => sum + (r.latencyMs ?? 0), 0),
+  };
+
+  return payloads;
 }
 
 export const _test = {
