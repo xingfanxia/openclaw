@@ -39,6 +39,7 @@ import { getQueueSize } from "../process/command-queue.js";
 import { CommandLane } from "../process/lanes.js";
 import { normalizeAgentId, toAgentStoreSessionKey } from "../routing/session-key.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
+import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
 import { escapeRegExp } from "../utils.js";
 import { formatErrorMessage, hasErrnoCode } from "./errors.js";
 import { isWithinActiveHours } from "./heartbeat-active-hours.js";
@@ -496,6 +497,13 @@ function normalizeHeartbeatReply(
     };
   }
   let finalText = stripped.text;
+  // Strip reasoning/thinking tags and inline thinking prefixes (e.g. Gemini
+  // "span:model:think" leak) that may survive in the heartbeat text payload.
+  finalText = stripReasoningTagsFromText(finalText, { mode: "strict", trim: "both" });
+  finalText = finalText.replace(/^span:model:think\b[^\n]*\n?/gim, "").trim();
+  if (!finalText && !hasMedia) {
+    return { shouldSkip: true, text: "", hasMedia };
+  }
   if (responsePrefix && finalText && !finalText.startsWith(responsePrefix)) {
     finalText = `${responsePrefix} ${finalText}`;
   }
@@ -851,7 +859,11 @@ export async function runHeartbeatOnce(opts: {
     delivery.channel !== "none" && delivery.to && visibility.showAlerts,
   );
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
-  const { prompt: basePrompt, hasExecCompletion, hasCronEvents } = resolveHeartbeatRunPrompt({
+  const {
+    prompt: basePrompt,
+    hasExecCompletion,
+    hasCronEvents,
+  } = resolveHeartbeatRunPrompt({
     cfg,
     heartbeat,
     preflight,
