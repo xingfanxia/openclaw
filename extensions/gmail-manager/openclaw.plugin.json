@@ -1,0 +1,46 @@
+{
+  "id": "gmail-manager",
+  "name": "Gmail Manager",
+  "description": "Gmail account management with OAuth2 auth, daily digests, and on-demand email operations across multiple accounts.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "accounts": {
+        "type": "array",
+        "description": "Gmail accounts to manage.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "email": { "type": "string" },
+            "type": { "type": "string", "enum": ["workspace", "personal"] }
+          },
+          "required": ["id", "email", "type"]
+        }
+      },
+      "oauth": {
+        "type": "object",
+        "description": "Google OAuth2 configuration.",
+        "properties": {
+          "clientId": { "type": "string" },
+          "clientSecret": { "type": "string" },
+          "redirectUri": { "type": "string" }
+        },
+        "required": ["clientId", "clientSecret", "redirectUri"]
+      },
+      "cron": {
+        "type": "object",
+        "description": "Daily digest cron settings.",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "schedule": { "type": "string" },
+          "channels": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@openclaw/drive-manager",
+  "version": "0.1.0",
+  "description": "Google Drive file management extension for OpenClaw",
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {
+    "googleapis": "^146.0.0"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  }
+}
