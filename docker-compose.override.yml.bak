@@ -1,0 +1,58 @@
+services:
+  openclaw-gateway:
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      VERCEL_TOKEN: ${VERCEL_TOKEN:-}
+      GOOGLE_CLOUD_PROJECT: ax-devbox
+      GOOGLE_CLOUD_LOCATION: us-east5
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      GOG_KEYRING_PASSWORD: ${GOG_KEYRING_PASSWORD:-}
+      GOG_ACCOUNT: ${GOG_ACCOUNT:-}
+      NODE_ENV: development
+    volumes:
+      - ${HOME}/projects:/home/node/projects
+      - ${HOME}/obsidian-vault:/home/node/obsidian-vault
+      # Claude credentials only (file mount, read-only) — don't mount full dir (uid mismatch breaks host)
+      # Credential file is already mounted in docker-compose.yml
+      - ${HOME}/.config/gh:/home/node/.config/gh:ro
+      - ${HOME}/.config/gogcli:/home/node/.config/gogcli
+      - ${HOME}/.gitconfig-openclaw:/home/node/.gitconfig:ro
+
+  litellm-proxy:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: openclaw-litellm-proxy
+    restart: unless-stopped
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  openclaw-cli:
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}

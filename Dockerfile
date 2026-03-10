@@ -235,6 +235,11 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
       -o /usr/local/bin/yt-dlp && \
     chmod a+rx /usr/local/bin/yt-dlp
 
+# gog CLI (Google Workspace: Gmail, Calendar, Drive, Sheets, Docs, Contacts)
+RUN curl -sL https://github.com/steipete/gogcli/releases/download/v0.12.0/gogcli_0.12.0_linux_amd64.tar.gz \
+      | tar xzf - -C /usr/local/bin gog && \
+    chmod a+rx /usr/local/bin/gog
+
 # Coding agent SDKs (Claude Code, Codex) + Vercel CLI
 RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-agent-sdk \
       @openai/codex @openai/codex-sdk vercel
