@@ -269,6 +269,8 @@ export type OpenClawPluginApi = {
   config: OpenClawConfig;
   pluginConfig?: Record<string, unknown>;
   runtime: PluginRuntime;
+  /** Resolved workspace directory for the current agent (if configured). */
+  workspaceDir?: string;
   logger: PluginLogger;
   registerTool: (
     tool: AnyAgentTool | OpenClawPluginToolFactory,

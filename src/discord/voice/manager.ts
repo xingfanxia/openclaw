@@ -676,7 +676,6 @@ export class DiscordVoiceManager {
     const directive = parseTtsDirectives(
       replyText,
       ttsConfig.modelOverrides,
-      ttsConfig.openai.baseUrl,
     );
     const speakText = directive.overrides.ttsText ?? directive.cleanedText.trim();
     if (!speakText) {

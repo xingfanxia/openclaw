@@ -164,6 +164,8 @@ export type SessionEntry = {
   skillsSnapshot?: SessionSkillSnapshot;
   systemPromptReport?: SessionSystemPromptReport;
   acp?: SessionAcpMeta;
+  /** Timestamp (ms) when the heartbeat context was last updated. */
+  lastHeartbeatContextUpdatedAt?: number;
 };
 
 function normalizeRuntimeField(value: string | undefined): string | undefined {
