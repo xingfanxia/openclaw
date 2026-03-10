@@ -53,7 +53,7 @@ export const AgentDefaultsSchema = z
     memorySearch: MemorySearchSchema,
     contextPruning: z
       .object({
-        mode: z.union([z.literal("off"), z.literal("cache-ttl")]).optional(),
+        mode: z.union([z.literal("off"), z.literal("cache-ttl"), z.literal("always")]).optional(),
         ttl: z.string().optional(),
         keepLastAssistants: z.number().int().nonnegative().optional(),
         softTrimRatio: z.number().min(0).max(1).optional(),
@@ -75,6 +75,13 @@ export const AgentDefaultsSchema = z
           .strict()
           .optional(),
         hardClear: z
+          .object({
+            enabled: z.boolean().optional(),
+            placeholder: z.string().optional(),
+          })
+          .strict()
+          .optional(),
+        imageStrip: z
           .object({
             enabled: z.boolean().optional(),
             placeholder: z.string().optional(),
@@ -125,6 +132,9 @@ export const AgentDefaultsSchema = z
       })
       .strict()
       .optional(),
+    sessionMessageLimit: z.number().int().nonnegative().optional(),
+    proactiveCompactionRatio: z.number().min(0.1).max(0.95).optional(),
+    sessionMaxCompactions: z.number().int().nonnegative().optional(),
     embeddedPi: z
       .object({
         projectSettingsPolicy: z

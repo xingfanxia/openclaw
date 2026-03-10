@@ -9,6 +9,7 @@ export type SessionResetPolicy = {
   mode: SessionResetMode;
   atHour: number;
   idleMinutes?: number;
+  carryOverMessages?: number;
 };
 
 export type SessionFreshness = {
@@ -116,7 +117,10 @@ export function resolveSessionResetPolicy(params: {
     idleMinutes = DEFAULT_IDLE_MINUTES;
   }
 
-  return { mode, atHour, idleMinutes };
+  const carryOverMessages =
+    typeReset?.carryOverMessages ?? baseReset?.carryOverMessages ?? undefined;
+
+  return { mode, atHour, idleMinutes, carryOverMessages };
 }
 
 export function resolveChannelResetConfig(params: {

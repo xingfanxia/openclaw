@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
+import { resolveDefaultSessionStorePath } from "../../config/sessions/paths.js";
+import { loadSessionStore, updateSessionStore } from "../../config/sessions/store.js";
 import {
   ensureContextEnginesInitialized,
   resolveContextEngine,
@@ -21,6 +24,7 @@ import {
   markAuthProfileUsed,
   resolveProfilesUnavailableReason,
 } from "../auth-profiles.js";
+import { estimateMessagesTokens } from "../compaction.js";
 import {
   CONTEXT_WINDOW_HARD_MIN_TOKENS,
   CONTEXT_WINDOW_WARN_BELOW_TOKENS,
@@ -745,6 +749,7 @@ export async function runEmbeddedPiAgent(
       const usageAccumulator = createUsageAccumulator();
       let lastRunPromptUsage: ReturnType<typeof normalizeUsage> | undefined;
       let autoCompactionCount = 0;
+      let lastMessagesSnapshot: AgentMessage[] | undefined;
       let runLoopIterations = 0;
       let overloadFailoverAttempts = 0;
       const maybeMarkAuthProfileFailure = async (failure: {
@@ -838,6 +843,98 @@ export async function runEmbeddedPiAgent(
             };
           }
           runLoopIterations += 1;
+
+          // --- Proactive compaction: compact before the context overflows ---
+          const PROACTIVE_COMPACTION_RATIO =
+            params.config?.agents?.defaults?.proactiveCompactionRatio ?? 0.8;
+          const sessionMessageLimit = params.config?.agents?.defaults?.sessionMessageLimit ?? 0;
+
+          if (lastMessagesSnapshot && lastMessagesSnapshot.length > 2) {
+            const msgCount = lastMessagesSnapshot.length;
+            const currentTokens = estimateMessagesTokens(lastMessagesSnapshot);
+            const tokenThreshold = Math.floor(ctxInfo.tokens * PROACTIVE_COMPACTION_RATIO);
+
+            const shouldCompact =
+              (sessionMessageLimit > 0 && msgCount > sessionMessageLimit) ||
+              currentTokens > tokenThreshold;
+
+            if (shouldCompact) {
+              log.info(
+                `[proactive-compact] Triggering: messages=${msgCount}` +
+                  `${sessionMessageLimit > 0 ? `/${sessionMessageLimit}` : ""} ` +
+                  `tokens=${currentTokens}/${tokenThreshold}`,
+              );
+              const compactResult = await contextEngine.compact({
+                sessionId: params.sessionId,
+                sessionFile: params.sessionFile,
+                tokenBudget: ctxInfo.tokens,
+                force: true,
+                compactionTarget: "budget",
+                runtimeContext: {
+                  sessionKey: params.sessionKey,
+                  messageChannel: params.messageChannel,
+                  messageProvider: params.messageProvider,
+                  agentAccountId: params.agentAccountId,
+                  authProfileId: lastProfileId,
+                  workspaceDir: resolvedWorkspace,
+                  agentDir,
+                  config: params.config,
+                  skillsSnapshot: params.skillsSnapshot,
+                  senderIsOwner: params.senderIsOwner,
+                  provider,
+                  model: modelId,
+                  runId: params.runId,
+                  thinkLevel,
+                  reasoningLevel: params.reasoningLevel,
+                  bashElevated: params.bashElevated,
+                  extraSystemPrompt: params.extraSystemPrompt,
+                  ownerNumbers: params.ownerNumbers,
+                  trigger: "proactive",
+                },
+              });
+              if (compactResult.compacted) {
+                autoCompactionCount += 1;
+                log.info(`[proactive-compact] Succeeded`);
+              }
+            }
+          }
+
+          // --- Session reset after too many compactions ---
+          const sessionMaxCompactions = params.config?.agents?.defaults?.sessionMaxCompactions ?? 0;
+
+          if (sessionMaxCompactions > 0) {
+            const storePath = resolveDefaultSessionStorePath(workspaceResolution.agentId);
+            const store = loadSessionStore(storePath);
+            const sessionKey = params.sessionKey ?? params.sessionId;
+            const priorCompactions = store[sessionKey]?.compactionCount ?? 0;
+            const totalCompactions = priorCompactions + autoCompactionCount;
+
+            if (totalCompactions >= sessionMaxCompactions) {
+              log.info(
+                `[session-reset] Compaction limit reached: ${totalCompactions}/${sessionMaxCompactions}. ` +
+                  `Resetting session transcript.`,
+              );
+              // Write fresh session header, discarding all messages
+              const header = {
+                type: "session",
+                version: 2,
+                id: params.sessionId,
+                timestamp: new Date().toISOString(),
+                cwd: resolvedWorkspace,
+              };
+              await fs.writeFile(params.sessionFile, `${JSON.stringify(header)}\n`, "utf-8");
+              autoCompactionCount = 0;
+              lastMessagesSnapshot = undefined;
+              // Reset compaction count in store
+              await updateSessionStore(storePath, (s) => {
+                const entry = s[sessionKey];
+                if (entry) {
+                  entry.compactionCount = 0;
+                }
+              });
+            }
+          }
+
           const copilotAuthRetry = authRetryPending;
           authRetryPending = false;
           attemptedThinking.add(thinkLevel);
@@ -927,6 +1024,7 @@ export async function runEmbeddedPiAgent(
             sessionIdUsed,
             lastAssistant,
           } = attempt;
+          lastMessagesSnapshot = attempt.messagesSnapshot;
           bootstrapPromptWarningSignaturesSeen =
             attempt.bootstrapPromptWarningSignaturesSeen ??
             (attempt.bootstrapPromptWarningSignature

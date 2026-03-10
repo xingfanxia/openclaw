@@ -75,6 +75,8 @@ export type SessionResetConfig = {
   atHour?: number;
   /** Sliding idle window (minutes). When set with daily mode, whichever expires first wins. */
   idleMinutes?: number;
+  /** Number of recent chat messages to carry over into the new session (0 = disabled). */
+  carryOverMessages?: number;
 };
 export type SessionResetByTypeConfig = {
   direct?: SessionResetConfig;

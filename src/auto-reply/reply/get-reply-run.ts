@@ -176,6 +176,7 @@ type RunPreparedReplyParams = {
   storePath?: string;
   workspaceDir: string;
   abortedLastRun: boolean;
+  sessionSeedContext?: string;
 };
 
 export async function runPreparedReply(
@@ -218,6 +219,7 @@ export async function runPreparedReply(
     storePath,
     workspaceDir,
     sessionStore,
+    sessionSeedContext,
   } = params;
   let {
     sessionEntry,
@@ -290,7 +292,10 @@ export async function runPreparedReply(
   const isBareSessionReset =
     isNewSession &&
     ((baseBodyTrimmedRaw.length === 0 && rawBodyTrimmed.length > 0) || isBareNewOrReset);
-  const baseBodyFinal = isBareSessionReset ? buildBareSessionResetPrompt(cfg) : baseBody;
+  const seedPrefix = isNewSession ? sessionSeedContext : undefined;
+  const baseBodyFinal = isBareSessionReset
+    ? [seedPrefix, buildBareSessionResetPrompt(cfg)].filter(Boolean).join("\n\n")
+    : [seedPrefix, baseBody].filter(Boolean).join("\n\n");
   const inboundUserContext = buildInboundUserContextPrefix(
     isNewSession
       ? {

@@ -172,3 +172,34 @@ export function stripInternalHeartbeatPromptMessages(messages: AgentMessage[]): 
   }
   return touched ? out : messages;
 }
+
+/**
+ * Strip tool calls, tool results, and thinking blocks from message history,
+ * keeping only user and assistant chat text. This reduces token usage for
+ * contexts that only need conversational content (e.g., heartbeat runs).
+ */
+export function stripToolHistoryFromMessages(messages: AgentMessage[]): AgentMessage[] {
+  const out: AgentMessage[] = [];
+  for (const msg of messages) {
+    if (msg.role === "toolResult") {
+      continue;
+    }
+    if (msg.role === "assistant") {
+      const content = (msg as { content?: unknown }).content;
+      if (Array.isArray(content)) {
+        const textOnly = content.filter(
+          (b) => b && typeof b === "object" && b.type === "text" && typeof b.text === "string",
+        );
+        if (textOnly.length === 0) {
+          continue;
+        }
+        if (textOnly.length !== content.length) {
+          out.push({ ...msg, content: textOnly } as AgentMessage);
+          continue;
+        }
+      }
+    }
+    out.push(msg);
+  }
+  return out;
+}

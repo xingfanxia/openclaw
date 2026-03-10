@@ -22,7 +22,7 @@ export type AgentModelListConfig = {
 };
 
 export type AgentContextPruningConfig = {
-  mode?: "off" | "cache-ttl";
+  mode?: "off" | "cache-ttl" | "always";
   /** TTL to consider cache expired (duration string, default unit: minutes). */
   ttl?: string;
   keepLastAssistants?: number;
@@ -39,6 +39,11 @@ export type AgentContextPruningConfig = {
     tailChars?: number;
   };
   hardClear?: {
+    enabled?: boolean;
+    placeholder?: string;
+  };
+  /** Strip image blocks from old messages before pruning (reduces base64 bloat). */
+  imageStrip?: {
     enabled?: boolean;
     placeholder?: string;
   };
@@ -181,6 +186,12 @@ export type AgentDefaultsConfig = {
      */
     projectSettingsPolicy?: "trusted" | "sanitize" | "ignore";
   };
+  /** Auto-compact when session exceeds this many messages (0 = disabled). */
+  sessionMessageLimit?: number;
+  /** Fraction of context window at which proactive compaction triggers (0.1–0.95, default 0.8). */
+  proactiveCompactionRatio?: number;
+  /** Reset session (discard transcript) after this many compactions (0 = disabled). */
+  sessionMaxCompactions?: number;
   /** Vector memory search configuration (per-agent overrides supported). */
   memorySearch?: MemorySearchConfig;
   /** Default thinking level when no /think directive is present. */
@@ -248,6 +259,10 @@ export type AgentDefaultsConfig = {
     ackMaxChars?: number;
     /** Suppress tool error warning payloads during heartbeat runs. */
     suppressToolErrorWarnings?: boolean;
+    /** Max user turns to keep in heartbeat context (default: 20). Limits context size when heartbeat shares the main session. */
+    historyLimit?: number;
+    /** Strip tool calls/results/thinking from heartbeat context (default: true). Keeps only chat text. */
+    stripToolHistory?: boolean;
     /**
      * If true, run heartbeat turns with lightweight bootstrap context.
      * Lightweight mode keeps only HEARTBEAT.md from workspace bootstrap files.

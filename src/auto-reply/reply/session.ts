@@ -40,6 +40,7 @@ import type { MsgContext, TemplateContext } from "../templating.js";
 import { resolveEffectiveResetTargetSessionKey } from "./acp-reset-target.js";
 import { normalizeInboundTextNewlines } from "./inbound-text.js";
 import { stripMentions, stripStructuralPrefixes } from "./mentions.js";
+import { buildSeedContextPrefix } from "./session-seed.js";
 import {
   maybeRetireLegacyMainDeliveryRoute,
   resolveLastChannelRaw,
@@ -67,6 +68,7 @@ export type SessionInitResult = {
   isGroup: boolean;
   bodyStripped?: string;
   triggerBodyNormalized: string;
+  sessionSeedContext?: string;
 };
 
 function normalizeSessionText(value: unknown): string {
@@ -563,6 +565,19 @@ export async function initSessionState(params: {
     },
   );
 
+  // Build seed context prefix for injection into the user's message body.
+  let sessionSeedContext: string | undefined;
+  if (isNewSession && previousSessionEntry?.sessionFile) {
+    const carryOver = resetPolicy.carryOverMessages ?? 50;
+    if (carryOver > 0) {
+      sessionSeedContext =
+        buildSeedContextPrefix({
+          oldSessionFile: previousSessionEntry.sessionFile,
+          messageCount: carryOver,
+        }) ?? undefined;
+    }
+  }
+
   // Archive old transcript so it doesn't accumulate on disk (#14869).
   if (previousSessionEntry?.sessionId) {
     archiveSessionTranscripts({
@@ -637,5 +652,6 @@ export async function initSessionState(params: {
     isGroup,
     bodyStripped,
     triggerBodyNormalized,
+    sessionSeedContext,
   };
 }

@@ -9,6 +9,8 @@ export default function contextPruningExtension(api: ExtensionAPI): void {
       return undefined;
     }
 
+    // "always" mode: run pruner on every context event (no TTL gating).
+    // "cache-ttl" mode: only prune when cache TTL has expired.
     if (runtime.settings.mode === "cache-ttl") {
       const ttlMs = runtime.settings.ttlMs;
       const lastTouch = runtime.lastCacheTouchAt ?? null;
