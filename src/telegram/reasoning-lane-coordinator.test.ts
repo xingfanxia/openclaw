@@ -26,4 +26,18 @@ describe("splitTelegramReasoningText", () => {
   it("does not emit partial reasoning tag prefixes", () => {
     expect(splitTelegramReasoningText("  <thi")).toEqual({});
   });
+
+  it("recovers answer from unclosed think tag (Gemini leak)", () => {
+    const text = "<think>\n<final>老大，这两篇读完了</final>";
+    const result = splitTelegramReasoningText(text);
+    expect(result.answerText).toBe("老大，这两篇读完了");
+    expect(result.reasoningText).toBeUndefined();
+  });
+
+  it("recovers answer from unclosed think tag without final tags", () => {
+    const text = "<think>\nHere is my response to your question.";
+    const result = splitTelegramReasoningText(text);
+    expect(result.answerText).toBe("Here is my response to your question.");
+    expect(result.reasoningText).toBeUndefined();
+  });
 });

@@ -76,7 +76,15 @@ export function splitTelegramReasoningText(text?: string): TelegramReasoningSpli
   }
 
   const taggedReasoning = extractThinkingFromTaggedStreamOutsideCode(text);
-  const strippedAnswer = stripReasoningTagsFromText(text, { mode: "strict", trim: "both" });
+  let strippedAnswer = stripReasoningTagsFromText(text, { mode: "strict", trim: "both" });
+
+  // If strict mode dropped the entire message (e.g. Gemini leaked an unclosed
+  // <think> tag wrapping the real response), recover the content with preserve
+  // mode so the reply is not silently swallowed.
+  if (!strippedAnswer && taggedReasoning) {
+    strippedAnswer = stripReasoningTagsFromText(text, { mode: "preserve", trim: "both" });
+    return { answerText: strippedAnswer || undefined };
+  }
 
   if (!taggedReasoning && strippedAnswer === text) {
     return { answerText: text };
