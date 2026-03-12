@@ -6,6 +6,11 @@ const QUICK_TAG_RE = /<\s*\/?\s*(?:think(?:ing)?|thought|antthinking|final)\b/i;
 const FINAL_TAG_RE = /<\s*\/?\s*final\b[^<>]*>/gi;
 const THINKING_TAG_RE = /<\s*(\/?)\s*(?:think(?:ing)?|thought|antthinking)\b[^<>]*>/gi;
 
+// Gemini-style plain-text thinking residue that survives tag stripping.
+// Matches lines like "...。内部分析已在think中完成。" or "span:model:think ..."
+const THINKING_RESIDUE_RE =
+  /^(?:\.{2,3}。?\s*)?(?:内部分析已在think中完成|span:model:think\b)[^\n]*\n?/gim;
+
 function applyTrim(value: string, mode: ReasoningTagTrim): string {
   if (mode === "none") {
     return value;
@@ -26,12 +31,16 @@ export function stripReasoningTagsFromText(
   if (!text) {
     return text;
   }
-  if (!QUICK_TAG_RE.test(text)) {
-    return text;
-  }
 
   const mode = options?.mode ?? "strict";
   const trimMode = options?.trim ?? "both";
+
+  // Always strip plain-text thinking residue (no XML tags needed).
+  const hasResidueOnly = !QUICK_TAG_RE.test(text);
+  if (hasResidueOnly) {
+    const stripped = text.replace(THINKING_RESIDUE_RE, "");
+    return stripped !== text ? applyTrim(stripped, trimMode) : text;
+  }
 
   let cleaned = text;
   if (FINAL_TAG_RE.test(cleaned)) {
@@ -87,6 +96,9 @@ export function stripReasoningTagsFromText(
   if (!inThinking || mode === "preserve") {
     result += cleaned.slice(lastIndex);
   }
+
+  // Strip plain-text thinking residue that models emit outside of tags.
+  result = result.replace(THINKING_RESIDUE_RE, "");
 
   return applyTrim(result, trimMode);
 }
