@@ -20,6 +20,7 @@ services:
       - ${CODEX_AUTH:-~/.codex/auth.json}:/home/node/.codex/auth.json:ro
       - ${GITCONFIG_OPENCLAW:-~/.gitconfig-openclaw}:/home/node/.gitconfig:ro
       - ${PROJECTS_DIR:-~/projects}:/home/node/projects
+      - ${GOG_KEYRING:-~/.config/gogcli}:/home/node/.config/gogcli:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
