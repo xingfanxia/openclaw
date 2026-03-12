@@ -501,6 +501,12 @@ function normalizeHeartbeatReply(
   // "span:model:think" leak) that may survive in the heartbeat text payload.
   finalText = stripReasoningTagsFromText(finalText, { mode: "strict", trim: "both" });
   finalText = finalText.replace(/^span:model:think\b[^\n]*\n?/gim, "").trim();
+  // Strip Gemini plain-text chain-of-thought that leaks when includeThoughts
+  // isn't properly suppressed. Pattern: text starts with "think" followed by
+  // reasoning content (timestamps, HEARTBEAT references, decision logic).
+  if (/^think\s*[-\n]/i.test(finalText)) {
+    finalText = "";
+  }
   if (!finalText && !hasMedia) {
     return { shouldSkip: true, text: "", hasMedia };
   }

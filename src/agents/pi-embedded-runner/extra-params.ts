@@ -190,14 +190,17 @@ function sanitizeGoogleThinkingPayload(params: {
     return;
   }
   const thinkingConfigObj = thinkingConfig as Record<string, unknown>;
-  const thinkingBudget = thinkingConfigObj.thinkingBudget;
-  if (typeof thinkingBudget !== "number" || thinkingBudget >= 0) {
-    return;
-  }
 
-  // pi-ai can emit thinkingBudget=-1 for some Gemini 3.1 IDs; a negative budget
-  // is invalid for Google-compatible backends and can lead to malformed handling.
-  delete thinkingConfigObj.thinkingBudget;
+  // Never return thought content in the response — it leaks as plain text
+  // to messaging channels (Telegram, etc.) and cannot be reliably stripped.
+  thinkingConfigObj.includeThoughts = false;
+
+  const thinkingBudget = thinkingConfigObj.thinkingBudget;
+  if (typeof thinkingBudget === "number" && thinkingBudget < 0) {
+    // pi-ai can emit thinkingBudget=-1 for some Gemini 3.1 IDs; a negative budget
+    // is invalid for Google-compatible backends and can lead to malformed handling.
+    delete thinkingConfigObj.thinkingBudget;
+  }
 
   if (
     typeof params.modelId === "string" &&
