@@ -502,9 +502,10 @@ function normalizeHeartbeatReply(
   finalText = stripReasoningTagsFromText(finalText, { mode: "strict", trim: "both" });
   finalText = finalText.replace(/^span:model:think\b[^\n]*\n?/gim, "").trim();
   // Strip Gemini plain-text chain-of-thought that leaks when includeThoughts
-  // isn't properly suppressed. Pattern: text starts with "think" followed by
-  // reasoning content (timestamps, HEARTBEAT references, decision logic).
-  if (/^think\s*[-\n]/i.test(finalText)) {
+  // isn't properly suppressed. Pattern: text starts with "think" (case-insensitive)
+  // followed by whitespace — e.g. "think Heartbeat check...", "think\n- reasoning".
+  // Legitimate messages never start with bare "think " in this context.
+  if (/^think\s/i.test(finalText)) {
     finalText = "";
   }
   if (!finalText && !hasMedia) {
