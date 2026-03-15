@@ -3,9 +3,8 @@ import type { AudioTranscriptionRequest, AudioTranscriptionResult } from "../../
 import { normalizeBaseUrl, requireTranscriptionText } from "../shared.js";
 
 const DEFAULT_VOLCENGINE_ASR_BASE_URL = "https://openspeech.bytedance.com/api/v3";
-const DEFAULT_VOLCENGINE_ASR_RESOURCE_ID = "volc.bigasr.auc";
+const DEFAULT_VOLCENGINE_ASR_RESOURCE_ID = "volc.seedasr.auc";
 const DEFAULT_VOLCENGINE_ASR_MODEL = "bigmodel";
-const STATUS_OK = "20000000";
 
 const POLL_INTERVAL_MS = 2_000;
 const MAX_POLL_ATTEMPTS = 30;
@@ -26,6 +25,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Volcengine Seed ASR bigmodel file-recognition API.
+ *
+ * Two-step submit-then-poll flow. The request ID sent in the submit headers
+ * doubles as the task ID for polling — the submit response body is empty `{}`.
+ *
+ * @see https://console.volcengine.com — 豆包语音 → 录音文件识别大模型
+ */
 export async function transcribeVolcengineAudio(
   params: AudioTranscriptionRequest,
 ): Promise<AudioTranscriptionResult> {
@@ -33,36 +40,38 @@ export async function transcribeVolcengineAudio(
   const baseUrl = normalizeBaseUrl(params.baseUrl, DEFAULT_VOLCENGINE_ASR_BASE_URL);
   const model = resolveModel(params.model);
 
-  const appId = params.headers?.["X-Api-App-Id"] ?? "";
-  const accessKey = params.headers?.["X-Api-Access-Key"] ?? params.apiKey;
+  const appId = params.headers?.["X-Api-App-Id"] ?? process.env.DOUBAO_STT_APP_ID ?? "";
+  const accessKey =
+    params.headers?.["X-Api-Access-Key"] ?? params.apiKey ?? process.env.DOUBAO_STT_ACCESS_KEY;
   const resourceId = params.headers?.["X-Api-Resource-Id"] ?? DEFAULT_VOLCENGINE_ASR_RESOURCE_ID;
 
   if (!appId) {
-    throw new Error("Volcengine ASR requires X-Api-App-Id header");
+    throw new Error("Volcengine ASR requires X-Api-App-Id header or DOUBAO_STT_APP_ID env var");
   }
   if (!accessKey) {
     throw new Error(
-      "Volcengine ASR requires an API key (X-Api-Access-Key header or provider apiKey)",
+      "Volcengine ASR requires X-Api-Access-Key header, provider apiKey, or DOUBAO_STT_ACCESS_KEY env var",
     );
   }
 
   const audioBase64 = Buffer.from(params.buffer).toString("base64");
   const requestId = randomUUID();
 
+  // Auth headers per bigmodel v3 API: X-Api-App-Key + X-Api-Access-Key + X-Api-Resource-Id.
+  // X-Api-Request-Id doubles as the task ID for polling.
   const commonHeaders: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Api-App-Key": appId,
     "X-Api-Access-Key": accessKey,
     "X-Api-Resource-Id": resourceId,
     "X-Api-Request-Id": requestId,
-    "X-Api-Sequence": "-1",
   };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), params.timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), params.timeoutMs ?? 60_000);
 
   try {
-    // Step 1: Submit transcription task
+    // Step 1: Submit — body is { user, audio }; response is HTTP 200 with empty `{}`
     const submitUrl = `${baseUrl}/auc/${model}/submit`;
     const submitRes = await fetchFn(submitUrl, {
       method: "POST",
@@ -72,26 +81,27 @@ export async function transcribeVolcengineAudio(
         audio: {
           data: audioBase64,
           format: resolveAudioFormat(params.mime),
-          codec: resolveAudioCodec(params.mime),
-        },
-        request: {
-          model_name: model,
-          enable_itn: true,
-          enable_punc: true,
         },
       }),
       signal: controller.signal,
     });
 
+    // The bigmodel API returns status via X-Api-Status-Code header when present,
+    // or just HTTP 200 with empty body on success.
     const submitStatus = submitRes.headers.get("X-Api-Status-Code");
-    if (submitStatus !== STATUS_OK) {
+    if (submitStatus && submitStatus !== "20000000") {
       const message = submitRes.headers.get("X-Api-Message") ?? (await readBodyMessage(submitRes));
       throw new Error(`Volcengine ASR submit failed (status ${submitStatus}): ${message}`);
+    }
+    if (!submitRes.ok) {
+      const message = await readBodyMessage(submitRes);
+      throw new Error(`Volcengine ASR submit failed (HTTP ${submitRes.status}): ${message}`);
     }
     // Consume body to release connection
     await submitRes.text();
 
-    // Step 2: Poll for result using the same request ID
+    // Step 2: Poll for result using the same request ID.
+    // Response is `{}` while processing, full result object once complete.
     const queryUrl = `${baseUrl}/auc/${model}/query`;
 
     for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
@@ -107,7 +117,7 @@ export async function transcribeVolcengineAudio(
       const queryStatus = queryRes.headers.get("X-Api-Status-Code");
       const body = await queryRes.text();
 
-      if (queryStatus !== STATUS_OK) {
+      if (queryStatus && queryStatus !== "20000000") {
         const message = queryRes.headers.get("X-Api-Message") ?? "unknown error";
         throw new Error(`Volcengine ASR query failed (status ${queryStatus}): ${message}`);
       }
@@ -148,9 +158,13 @@ async function readBodyMessage(res: Response): Promise<string> {
   }
 }
 
+/**
+ * Map MIME type to Doubao audio format string.
+ * @see Doubao STT integration guide — Supported Audio Formats
+ */
 function resolveAudioFormat(mime?: string): string {
   if (!mime) {
-    return "wav";
+    return "mp3";
   }
   const lower = mime.toLowerCase();
   if (lower.includes("ogg") || lower.includes("opus")) {
@@ -159,28 +173,11 @@ function resolveAudioFormat(mime?: string): string {
   if (lower.includes("mp3") || lower.includes("mpeg")) {
     return "mp3";
   }
-  if (lower.includes("mp4") || lower.includes("m4a")) {
+  if (lower.includes("wav") || lower.includes("x-wav")) {
+    return "wav";
+  }
+  if (lower.includes("mp4") || lower.includes("m4a") || lower.includes("x-m4a")) {
     return "m4a";
   }
-  if (lower.includes("pcm")) {
-    return "pcm";
-  }
-  return "wav";
-}
-
-function resolveAudioCodec(mime?: string): string {
-  if (!mime) {
-    return "raw";
-  }
-  const lower = mime.toLowerCase();
-  if (lower.includes("opus")) {
-    return "opus";
-  }
-  if (lower.includes("mp3") || lower.includes("mpeg")) {
-    return "mp3";
-  }
-  if (lower.includes("aac") || lower.includes("m4a") || lower.includes("mp4")) {
-    return "aac";
-  }
-  return "raw";
+  return "mp3";
 }

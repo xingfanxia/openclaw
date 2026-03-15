@@ -5,7 +5,7 @@ export const PROVIDER_ENV_API_KEY_CANDIDATES: Record<string, string[]> = {
   zai: ["ZAI_API_KEY", "Z_AI_API_KEY"],
   opencode: ["OPENCODE_API_KEY", "OPENCODE_ZEN_API_KEY"],
   "qwen-portal": ["QWEN_OAUTH_TOKEN", "QWEN_PORTAL_API_KEY"],
-  volcengine: ["VOLCANO_ENGINE_API_KEY"],
+  volcengine: ["VOLCANO_ENGINE_API_KEY", "DOUBAO_STT_ACCESS_KEY"],
   "volcengine-plan": ["VOLCANO_ENGINE_API_KEY"],
   byteplus: ["BYTEPLUS_API_KEY"],
   "byteplus-plan": ["BYTEPLUS_API_KEY"],

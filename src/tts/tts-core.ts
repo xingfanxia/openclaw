@@ -691,9 +691,10 @@ export async function volcanoTTS(params: {
             format: "mp3",
             sample_rate: 24000,
           },
-          ...(contextTexts?.length
-            ? { additions: JSON.stringify({ context_texts: contextTexts }) }
-            : {}),
+          additions: JSON.stringify({
+            ...(contextTexts?.length ? { context_texts: contextTexts } : {}),
+            model_type: 4,
+          }),
         },
       }),
       signal: controller.signal,

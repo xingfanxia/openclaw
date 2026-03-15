@@ -60,7 +60,7 @@ const DEFAULT_EDGE_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
 
 const DEFAULT_VOLCANO_SPEAKER = "zh_female_linzhiling_mars_bigtts";
 const DEFAULT_VOLCANO_RESOURCE_ID = "seed-tts-1.0";
-const DEFAULT_VOLCANO_V2_RESOURCE_ID = "volc.seedicl.default";
+const DEFAULT_VOLCANO_V2_RESOURCE_ID = "seed-icl-2.0";
 
 const VOLCANO_V2_RESOURCE_PATTERNS = ["seedicl", "seed-tts-2.0", "seed-icl-2.0"];
 
@@ -373,14 +373,17 @@ export function resolveTtsConfig(cfg: OpenClawConfig): ResolvedTtsConfig {
       timeoutMs: raw.edge?.timeoutMs,
     },
     volcano: {
-      appId: raw.volcano?.appId || process.env.VOLC_TTS_APP_ID,
-      accessKey: raw.volcano?.accessKey || process.env.VOLC_TTS_ACCESS_TOKEN,
+      appId: raw.volcano?.appId || process.env.DOUBAO_TTS_APP_ID || process.env.VOLC_TTS_APP_ID,
+      accessKey:
+        raw.volcano?.accessKey ||
+        process.env.DOUBAO_TTS_ACCESS_KEY ||
+        process.env.VOLC_TTS_ACCESS_TOKEN,
       resourceId:
         raw.volcano?.resourceId ??
         (raw.volcano?.version === "v2"
           ? DEFAULT_VOLCANO_V2_RESOURCE_ID
           : DEFAULT_VOLCANO_RESOURCE_ID),
-      speaker: raw.volcano?.speaker ?? DEFAULT_VOLCANO_SPEAKER,
+      speaker: raw.volcano?.speaker || process.env.DOUBAO_TTS_SPEAKER || DEFAULT_VOLCANO_SPEAKER,
       version: raw.volcano?.version,
     },
     fishaudio: {
