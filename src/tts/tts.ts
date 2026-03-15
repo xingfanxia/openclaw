@@ -656,10 +656,17 @@ export function resolveTtsApiKey(
   provider: TtsProvider,
 ): string | undefined {
   if (provider === "elevenlabs") {
-    return config.elevenlabs.apiKey || process.env.ELEVENLABS_API_KEY || process.env.XI_API_KEY;
+    // When apiKey is explicitly set in config (even empty), respect it and skip env fallback.
+    if (config.elevenlabs.apiKey != null) {
+      return config.elevenlabs.apiKey || undefined;
+    }
+    return process.env.ELEVENLABS_API_KEY || process.env.XI_API_KEY;
   }
   if (provider === "openai") {
-    return config.openai.apiKey || process.env.OPENAI_API_KEY;
+    if (config.openai.apiKey != null) {
+      return config.openai.apiKey || undefined;
+    }
+    return process.env.OPENAI_API_KEY;
   }
   if (provider === "fishaudio") {
     return config.fishaudio.apiKey;
