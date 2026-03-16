@@ -18,7 +18,11 @@ import type {
 } from "./pi-embedded-subscribe.handlers.types.js";
 import { filterToolResultMediaUrls } from "./pi-embedded-subscribe.tools.js";
 import type { SubscribeEmbeddedPiSessionParams } from "./pi-embedded-subscribe.types.js";
-import { formatReasoningMessage, stripDowngradedToolCallText } from "./pi-embedded-utils.js";
+import {
+  formatReasoningMessage,
+  isLikelyInterleavedReasoning,
+  stripDowngradedToolCallText,
+} from "./pi-embedded-utils.js";
 import { hasNonzeroUsage, normalizeUsage, type UsageLike } from "./usage.js";
 
 const THINKING_TAG_SCAN_RE = /<\s*(\/?)\s*(?:think(?:ing)?|thought|antthinking)\s*>/gi;
@@ -497,6 +501,13 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     }
 
     if (shouldSkipAssistantText(chunk)) {
+      return;
+    }
+
+    // Suppress Gemini-style interleaved reasoning text between tool calls
+    // (e.g. "Now let me create the events...", "I need to add the return flight...").
+    if (isLikelyInterleavedReasoning(chunk)) {
+      log.debug(`Skipping interleaved reasoning: ${chunk.slice(0, 80)}...`);
       return;
     }
 

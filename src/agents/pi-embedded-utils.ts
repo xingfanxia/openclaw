@@ -9,6 +9,33 @@ export function isAssistantMessage(msg: AgentMessage | undefined): msg is Assist
   return msg?.role === "assistant";
 }
 
+// CJK Unicode ranges (Chinese, Japanese, Korean characters).
+const CJK_RE = /[\u2E80-\u9FFF\uF900-\uFAFF]/;
+
+// Gemini-style plain-text reasoning that leaks as interleaved text blocks
+// between tool calls. These are short English fragments the model emits while
+// planning its next tool call — not meant for the user.
+const INTERLEAVED_REASONING_RE =
+  /^(?:Now (?:let me|I )|(?:Hmm|OK|Alright|Right),?\s|(?:Let me|I (?:need to|should|will|can|want to|'ll|have to))\s|(?:First|Next|Then),?\s)/i;
+
+/**
+ * Detect short text blocks that look like interleaved model reasoning
+ * rather than user-facing content. Gemini often emits English planning
+ * text between tool calls (e.g. "Now let me create the events...").
+ *
+ * Heuristic: short (<300 chars), no CJK characters, matches reasoning starters.
+ */
+export function isLikelyInterleavedReasoning(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 300) {
+    return false;
+  }
+  if (CJK_RE.test(trimmed)) {
+    return false;
+  }
+  return INTERLEAVED_REASONING_RE.test(trimmed);
+}
+
 /**
  * Strip malformed Minimax tool invocations that leak into text content.
  * Minimax sometimes embeds tool calls as XML in text blocks instead of
