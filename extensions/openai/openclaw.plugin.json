@@ -4,7 +4,7 @@
     "onStartup": false
   },
   "enabledByDefault": true,
-  "providers": ["openai", "openai-codex"],
+  "providers": ["openai", "openai-codex", "azure-openai", "azure-openai-responses"],
   "modelSupport": {
     "modelPrefixes": ["gpt-", "o1", "o3", "o4"]
   },

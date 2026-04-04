@@ -1,0 +1,41 @@
+# Fork-specific Docker overrides.
+# This file is auto-merged by Docker Compose and should NOT be committed upstream.
+#
+# Required env vars (set in .env or shell):
+#   OPENCLAW_CONFIG_DIR, OPENCLAW_WORKSPACE_DIR
+#
+# Optional env vars with defaults:
+#   OPENCLAW_DOCKER_UID (1000), OPENCLAW_DOCKER_GID (1000)
+#   CLAUDE_CREDENTIALS (~/.claude/.credentials.json)
+#   CODEX_CONFIG (~/.codex/config.toml), CODEX_AUTH (~/.codex/auth.json)
+#   GITCONFIG_OPENCLAW (~/.gitconfig-openclaw)
+#   PROJECTS_DIR (~/projects)
+#   GWS_CONFIG (~/.config/gws)
+
+services:
+  openclaw-gateway:
+    user: "${OPENCLAW_DOCKER_UID:-1000}:${OPENCLAW_DOCKER_GID:-1000}"
+    env_file:
+      - ${OPENCLAW_CONFIG_DIR}/.env
+    volumes:
+      - ${CLAUDE_CREDENTIALS:-~/.claude/.credentials.json}:/home/node/.claude/.credentials.json:ro
+      - ${CODEX_CONFIG:-~/.codex/config.toml}:/home/node/.codex/config.toml:ro
+      - ${CODEX_AUTH:-~/.codex/auth.json}:/home/node/.codex/auth.json:ro
+      - ${GITCONFIG_OPENCLAW:-~/.gitconfig-openclaw}:/home/node/.gitconfig:ro
+      - ${PROJECTS_DIR:-~/projects}:/home/node/projects
+      - ${GWS_CONFIG:-~/.config/gws}:/home/node/.config/gws
+      - ${GWS_ACCOUNTS:-~/.config/gws-accounts}:/home/node/.config/gws-accounts
+      - /usr/local/bin/gwsa:/usr/local/bin/gwsa:ro
+      - /usr/lib/node_modules/@googleworkspace/cli:/usr/lib/node_modules/@googleworkspace/cli:ro
+      - /tmp/gws-wrapper:/usr/local/bin/gws:ro
+
+  openclaw-cli:
+    user: "${OPENCLAW_DOCKER_UID:-1000}:${OPENCLAW_DOCKER_GID:-1000}"
+    env_file:
+      - ${OPENCLAW_CONFIG_DIR}/.env
+    volumes:
+      - ${CLAUDE_CREDENTIALS:-~/.claude/.credentials.json}:/home/node/.claude/.credentials.json:ro
+      - ${CODEX_CONFIG:-~/.codex/config.toml}:/home/node/.codex/config.toml:ro
+      - ${CODEX_AUTH:-~/.codex/auth.json}:/home/node/.codex/auth.json:ro
+      - ${GITCONFIG_OPENCLAW:-~/.gitconfig-openclaw}:/home/node/.gitconfig:ro
+      - ${PROJECTS_DIR:-~/projects}:/home/node/projects
