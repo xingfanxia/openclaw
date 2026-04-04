@@ -1,9 +1,10 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { createProviderApiKeyAuthMethod } from "openclaw/plugin-sdk/provider-auth-api-key";
 import { ensureModelAllowlistEntry } from "openclaw/plugin-sdk/provider-onboard";
+import { volcengineMediaUnderstandingProvider } from "./media-understanding-provider.js";
 import { DOUBAO_CODING_MODEL_CATALOG, DOUBAO_MODEL_CATALOG } from "./models.js";
 import { buildDoubaoCodingProvider, buildDoubaoProvider } from "./provider-catalog.js";
-import { buildVolcengineSpeechProvider } from "./speech-provider.js";
+import { buildVolcanoSpeechProvider } from "./speech-provider.js";
 
 const PROVIDER_ID = "volcengine";
 const VOLCENGINE_DEFAULT_MODEL_REF = "volcengine-plan/ark-code-latest";
@@ -11,8 +12,10 @@ const VOLCENGINE_DEFAULT_MODEL_REF = "volcengine-plan/ark-code-latest";
 export default definePluginEntry({
   id: PROVIDER_ID,
   name: "Volcengine Provider",
-  description: "Bundled Volcengine provider plugin",
+  description: "Bundled Volcengine provider plugin (LLM, TTS, STT)",
   register(api) {
+    api.registerSpeechProvider(buildVolcanoSpeechProvider());
+    api.registerMediaUnderstandingProvider(volcengineMediaUnderstandingProvider);
     api.registerProvider({
       id: PROVIDER_ID,
       label: "Volcengine",
@@ -79,6 +82,5 @@ export default definePluginEntry({
         return [...volcengineModels, ...volcenginePlanModels];
       },
     });
-    api.registerSpeechProvider(buildVolcengineSpeechProvider());
   },
 });

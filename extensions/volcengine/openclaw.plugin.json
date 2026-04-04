@@ -196,6 +196,10 @@
       "cliDescription": "Volcano Engine API key"
     }
   ],
+  "contracts": {
+    "speechProviders": ["volcano"],
+    "mediaUnderstandingProviders": ["volcengine"]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

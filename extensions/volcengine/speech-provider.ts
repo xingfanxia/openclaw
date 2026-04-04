@@ -1,228 +1,130 @@
 import { normalizeResolvedSecretInputString } from "openclaw/plugin-sdk/secret-input";
-import type {
-  SpeechDirectiveTokenParseContext,
-  SpeechProviderConfig,
-  SpeechProviderOverrides,
-  SpeechProviderPlugin,
-} from "openclaw/plugin-sdk/speech-core";
-import { asFiniteNumber, asObject, trimToUndefined } from "openclaw/plugin-sdk/speech-core";
-import { volcengineTTS, type VolcengineTtsEncoding } from "./tts.js";
+import type { SpeechProviderConfig, SpeechProviderPlugin } from "openclaw/plugin-sdk/speech-core";
+import { volcanoTTS } from "./tts.js";
 
-const DEFAULT_VOICE = "en_female_anna_mars_bigtts";
-const DEFAULT_CLUSTER = "volcano_tts";
-const DEFAULT_RESOURCE_ID = "seed-tts-1.0";
-const DEFAULT_APP_KEY = "aGjiRDfUWi";
+const DEFAULT_VOLCANO_SPEAKER = "zh_female_linzhiling_mars_bigtts";
+const DEFAULT_VOLCANO_RESOURCE_ID = "seed-tts-1.0";
+const DEFAULT_VOLCANO_V2_RESOURCE_ID = "seed-icl-2.0";
 
-const VOLCENGINE_VOICES: readonly string[] = [
-  "en_female_anna_mars_bigtts",
-  "en_male_adam_mars_bigtts",
-  "en_female_sarah_mars_bigtts",
-  "en_male_smith_mars_bigtts",
-  "zh_female_cancan_mars_bigtts",
-  "zh_female_qingxinnvsheng_mars_bigtts",
-  "zh_female_linjia_mars_bigtts",
-  "zh_male_wennuanahu_moon_bigtts",
-  "zh_male_shaonianzixin_moon_bigtts",
-  "zh_female_shuangkuaisisi_moon_bigtts",
-];
+const VOLCANO_V2_RESOURCE_PATTERNS = ["seedicl", "seed-tts-2.0", "seed-icl-2.0"];
 
-type VolcengineTtsProviderConfig = {
-  apiKey?: string;
+type VolcanoProviderConfig = {
   appId?: string;
-  token?: string;
-  voice: string;
-  cluster: string;
+  accessKey?: string;
   resourceId: string;
-  appKey: string;
-  baseUrl?: string;
-  speedRatio?: number;
-  emotion?: string;
+  speaker: string;
+  version?: "v1" | "v2";
 };
 
-type VolcengineTtsProviderOverrides = {
-  voice?: string;
-  speedRatio?: number;
-  emotion?: string;
-};
+function trimToUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
 
-function normalizeVolcengineProviderConfig(
-  rawConfig: Record<string, unknown>,
-): VolcengineTtsProviderConfig {
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function isV2Resource(resourceId: string): boolean {
+  const lower = resourceId.toLowerCase();
+  return VOLCANO_V2_RESOURCE_PATTERNS.some((p) => lower.includes(p));
+}
+
+function resolveIsV2(config: VolcanoProviderConfig): boolean {
+  return config.version === "v2" || isV2Resource(config.resourceId);
+}
+
+function normalizeVolcanoProviderConfig(rawConfig: Record<string, unknown>): VolcanoProviderConfig {
   const providers = asObject(rawConfig.providers);
-  const raw = asObject(providers?.volcengine) ?? asObject(rawConfig.volcengine);
+  const raw = asObject(providers?.volcano) ?? asObject(rawConfig.volcano);
+  const version = trimToUndefined(raw?.version) as "v1" | "v2" | undefined;
   return {
-    apiKey: normalizeResolvedSecretInputString({
-      value: raw?.apiKey,
-      path: "messages.tts.providers.volcengine.apiKey",
+    appId: normalizeResolvedSecretInputString({
+      value: raw?.appId,
+      path: "messages.tts.providers.volcano.appId",
     }),
-    appId: trimToUndefined(raw?.appId),
-    token: normalizeResolvedSecretInputString({
-      value: raw?.token,
-      path: "messages.tts.providers.volcengine.token",
+    accessKey: normalizeResolvedSecretInputString({
+      value: raw?.accessKey,
+      path: "messages.tts.providers.volcano.accessKey",
     }),
-    voice:
-      trimToUndefined(raw?.voice) ??
-      trimToUndefined(process.env.VOLCENGINE_TTS_VOICE) ??
-      DEFAULT_VOICE,
-    cluster:
-      trimToUndefined(raw?.cluster) ??
-      trimToUndefined(process.env.VOLCENGINE_TTS_CLUSTER) ??
-      DEFAULT_CLUSTER,
     resourceId:
       trimToUndefined(raw?.resourceId) ??
-      trimToUndefined(process.env.VOLCENGINE_TTS_RESOURCE_ID) ??
-      DEFAULT_RESOURCE_ID,
-    appKey:
-      trimToUndefined(raw?.appKey) ??
-      trimToUndefined(process.env.VOLCENGINE_TTS_APP_KEY) ??
-      DEFAULT_APP_KEY,
-    baseUrl: trimToUndefined(raw?.baseUrl) ?? trimToUndefined(process.env.VOLCENGINE_TTS_BASE_URL),
-    speedRatio: asFiniteNumber(raw?.speedRatio),
-    emotion: trimToUndefined(raw?.emotion),
+      (version === "v2" ? DEFAULT_VOLCANO_V2_RESOURCE_ID : DEFAULT_VOLCANO_RESOURCE_ID),
+    speaker: trimToUndefined(raw?.speaker) ?? DEFAULT_VOLCANO_SPEAKER,
+    version,
   };
 }
 
-function resolveSeedSpeechApiKey(configApiKey?: string): string | undefined {
-  return (
-    configApiKey ??
-    trimToUndefined(process.env.VOLCENGINE_TTS_API_KEY) ??
-    trimToUndefined(process.env.BYTEPLUS_SEED_SPEECH_API_KEY)
-  );
-}
-
-function readProviderConfig(config: SpeechProviderConfig): VolcengineTtsProviderConfig {
-  const normalized = normalizeVolcengineProviderConfig({});
+function readVolcanoProviderConfig(config: SpeechProviderConfig): VolcanoProviderConfig {
+  const defaults = normalizeVolcanoProviderConfig({});
+  const version = (trimToUndefined(config.version) as "v1" | "v2" | undefined) ?? defaults.version;
   return {
-    apiKey:
-      normalizeResolvedSecretInputString({
-        value: config.apiKey,
-        path: "messages.tts.providers.volcengine.apiKey",
-      }) ?? normalized.apiKey,
-    appId: trimToUndefined(config.appId) ?? normalized.appId,
-    token: trimToUndefined(config.token) ?? normalized.token,
-    voice: trimToUndefined(config.voice) ?? normalized.voice,
-    cluster: trimToUndefined(config.cluster) ?? normalized.cluster,
-    resourceId: trimToUndefined(config.resourceId) ?? normalized.resourceId,
-    appKey: trimToUndefined(config.appKey) ?? normalized.appKey,
-    baseUrl: trimToUndefined(config.baseUrl) ?? normalized.baseUrl,
-    speedRatio: asFiniteNumber(config.speedRatio) ?? normalized.speedRatio,
-    emotion: trimToUndefined(config.emotion) ?? normalized.emotion,
+    appId: trimToUndefined(config.appId) ?? defaults.appId,
+    accessKey: trimToUndefined(config.accessKey) ?? defaults.accessKey,
+    resourceId:
+      trimToUndefined(config.resourceId) ??
+      (version === "v2" ? DEFAULT_VOLCANO_V2_RESOURCE_ID : DEFAULT_VOLCANO_RESOURCE_ID),
+    speaker: trimToUndefined(config.speaker) ?? defaults.speaker,
+    version,
   };
 }
 
-function readVolcengineOverrides(
-  overrides: SpeechProviderOverrides | undefined,
-): VolcengineTtsProviderOverrides {
-  if (!overrides) {
-    return {};
-  }
-  return {
-    voice: trimToUndefined(overrides.voice),
-    speedRatio: asFiniteNumber(overrides.speedRatio),
-    emotion: trimToUndefined(overrides.emotion),
-  };
+function resolveAppId(config: VolcanoProviderConfig): string | undefined {
+  return config.appId || process.env.DOUBAO_TTS_APP_ID || process.env.VOLC_TTS_APP_ID;
 }
 
-function parseDirectiveToken(ctx: SpeechDirectiveTokenParseContext): {
-  handled: boolean;
-  overrides?: SpeechProviderOverrides;
-  warnings?: string[];
-} {
-  switch (ctx.key) {
-    case "voice":
-    case "volcengine_voice":
-    case "volcenginevoice":
-      if (!ctx.policy.allowVoice) {
-        return { handled: true };
-      }
-      return { handled: true, overrides: { ...ctx.currentOverrides, voice: ctx.value } };
-    case "speed":
-    case "speedratio":
-    case "speed_ratio": {
-      if (!ctx.policy.allowVoiceSettings) {
-        return { handled: true };
-      }
-      const speedRatio = Number(ctx.value);
-      if (!Number.isFinite(speedRatio) || speedRatio < 0.2 || speedRatio > 3.0) {
-        return { handled: true, warnings: [`invalid Volcengine speedRatio "${ctx.value}"`] };
-      }
-      return { handled: true, overrides: { ...ctx.currentOverrides, speedRatio } };
-    }
-    case "emotion":
-      if (!ctx.policy.allowVoiceSettings) {
-        return { handled: true };
-      }
-      return { handled: true, overrides: { ...ctx.currentOverrides, emotion: ctx.value } };
-    default:
-      return { handled: false };
-  }
+function resolveAccessKey(config: VolcanoProviderConfig): string | undefined {
+  return config.accessKey || process.env.DOUBAO_TTS_ACCESS_KEY || process.env.VOLC_TTS_ACCESS_TOKEN;
 }
 
-export function buildVolcengineSpeechProvider(): SpeechProviderPlugin {
+export function buildVolcanoSpeechProvider(): SpeechProviderPlugin {
   return {
-    id: "volcengine",
-    label: "Volcengine",
-    autoSelectOrder: 90,
-    aliases: ["bytedance", "doubao"],
-    voices: VOLCENGINE_VOICES,
-    resolveConfig: ({ rawConfig }) => normalizeVolcengineProviderConfig(rawConfig),
-    parseDirectiveToken,
-
-    listVoices: async () =>
-      VOLCENGINE_VOICES.map((v) => ({
-        id: v,
-        name: v.replace(/^(?:en|zh)_(female|male)_/, "").replace(/_.*$/, ""),
-        locale: v.startsWith("en_") ? "en-US" : "zh-CN",
-        gender: v.includes("_female_") ? "female" : "male",
-      })),
-
+    id: "volcano",
+    label: "Volcano Engine",
+    aliases: ["volcengine-tts", "doubao-tts"],
+    autoSelectOrder: 35,
     isConfigured: ({ providerConfig }) => {
-      const cfg = readProviderConfig(providerConfig);
-      return Boolean(
-        resolveSeedSpeechApiKey(cfg.apiKey) ||
-        ((cfg.appId || process.env.VOLCENGINE_TTS_APPID) &&
-          (cfg.token || process.env.VOLCENGINE_TTS_TOKEN)),
-      );
+      const config = readVolcanoProviderConfig(providerConfig);
+      return Boolean(resolveAppId(config) && resolveAccessKey(config));
     },
-
+    resolveConfig: ({ rawConfig }) => normalizeVolcanoProviderConfig(rawConfig),
     synthesize: async (req) => {
-      const cfg = readProviderConfig(req.providerConfig);
-      const overrides = readVolcengineOverrides(req.providerOverrides);
-      const apiKey = resolveSeedSpeechApiKey(cfg.apiKey);
-      const appId = cfg.appId || process.env.VOLCENGINE_TTS_APPID;
-      const token = cfg.token || process.env.VOLCENGINE_TTS_TOKEN;
-
-      if (!apiKey && (!appId || !token)) {
-        throw new Error(
-          "Volcengine TTS credentials missing. Set VOLCENGINE_TTS_API_KEY, " +
-            "BYTEPLUS_SEED_SPEECH_API_KEY, or legacy VOLCENGINE_TTS_APPID and VOLCENGINE_TTS_TOKEN.",
-        );
+      const config = readVolcanoProviderConfig(req.providerConfig);
+      const appId = resolveAppId(config);
+      const accessKey = resolveAccessKey(config);
+      if (!appId || !accessKey) {
+        throw new Error("Volcano TTS requires appId and accessKey");
       }
 
-      const isVoiceNote = req.target === "voice-note";
-      const encoding: VolcengineTtsEncoding = isVoiceNote ? "ogg_opus" : "mp3";
+      const overrides = req.providerOverrides ?? {};
+      const speaker = trimToUndefined(overrides.speaker) ?? config.speaker;
+      const resourceId = trimToUndefined(overrides.resourceId) ?? config.resourceId;
+      const version =
+        (trimToUndefined(overrides.version) as "v1" | "v2" | undefined) ?? config.version;
+      const effectiveConfig = { ...config, resourceId, version };
+      const v2 = resolveIsV2(effectiveConfig);
 
-      const audioBuffer = await volcengineTTS({
+      const contextTexts = Array.isArray(overrides.contextTexts)
+        ? (overrides.contextTexts as string[])
+        : undefined;
+
+      const audioBuffer = await volcanoTTS({
         text: req.text,
-        apiKey,
         appId,
-        token,
-        voice: overrides.voice ?? cfg.voice,
-        cluster: cfg.cluster,
-        resourceId: cfg.resourceId,
-        appKey: cfg.appKey,
-        baseUrl: cfg.baseUrl,
-        speedRatio: overrides.speedRatio ?? cfg.speedRatio,
-        emotion: overrides.emotion ?? cfg.emotion,
-        encoding,
+        accessKey,
+        resourceId,
+        speaker,
         timeoutMs: req.timeoutMs,
+        contextTexts,
+        isV2: v2,
       });
 
       return {
         audioBuffer,
-        outputFormat: encoding === "ogg_opus" ? "opus" : "mp3",
-        fileExtension: encoding === "ogg_opus" ? ".opus" : ".mp3",
-        voiceCompatible: isVoiceNote,
+        outputFormat: "mp3",
+        fileExtension: ".mp3",
+        voiceCompatible: v2 || req.target === "voice-note",
       };
     },
   };
