@@ -1,0 +1,23 @@
+{
+  "id": "web-reader",
+  "name": "Web Reader",
+  "description": "Read webpages (Jina Reader) and take screenshots (Browserless).",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "browserlessToken": {
+        "type": "string",
+        "description": "Browserless.io API token for screenshots"
+      },
+      "browserlessBaseUrl": {
+        "type": "string",
+        "description": "Override Browserless API base URL (default: https://chrome.browserless.io)"
+      },
+      "jinaApiKey": {
+        "type": "string",
+        "description": "Optional Jina Reader API key for higher rate limits"
+      }
+    }
+  }
+}

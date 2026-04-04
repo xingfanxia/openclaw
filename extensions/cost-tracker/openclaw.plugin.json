@@ -1,0 +1,10 @@
+{
+  "id": "cost-tracker",
+  "name": "Cost Tracker",
+  "description": "Track token usage and costs with /cost command across all channels.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

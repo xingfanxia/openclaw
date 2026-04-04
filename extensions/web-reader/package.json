@@ -1,0 +1,11 @@
+{
+  "name": "@openclaw/web-reader",
+  "version": "0.1.0",
+  "description": "Read webpages (Jina Reader) and take screenshots (Browserless)",
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {},
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  }
+}

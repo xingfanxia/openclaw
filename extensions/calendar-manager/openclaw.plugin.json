@@ -1,0 +1,47 @@
+{
+  "id": "calendar-manager",
+  "name": "Calendar Manager",
+  "description": "Google Calendar management with event creation, search, agenda views, and natural language event adding across multiple accounts.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "accounts": {
+        "type": "array",
+        "description": "Google accounts to manage calendars for (shared with Gmail).",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "email": { "type": "string" },
+            "type": { "type": "string", "enum": ["workspace", "personal"] }
+          },
+          "required": ["id", "email", "type"]
+        }
+      },
+      "oauth": {
+        "type": "object",
+        "description": "Google OAuth2 configuration (same as Gmail).",
+        "properties": {
+          "clientId": { "type": "string" },
+          "clientSecret": { "type": "string" },
+          "redirectUri": { "type": "string" }
+        },
+        "required": ["clientId", "clientSecret", "redirectUri"]
+      },
+      "defaultTimezone": {
+        "type": "string",
+        "description": "Default timezone for events (IANA format, e.g. America/Los_Angeles)"
+      },
+      "defaultAccount": {
+        "type": "string",
+        "description": "Default account ID used when account_id is omitted from tool calls"
+      },
+      "accountAliases": {
+        "type": "object",
+        "description": "Map of alias names to account IDs (e.g. {\"work\": \"work\", \"personal\": \"xingfanxia\"})",
+        "additionalProperties": { "type": "string" }
+      }
+    }
+  }
+}

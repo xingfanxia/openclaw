@@ -1,0 +1,43 @@
+{
+  "id": "drive-manager",
+  "name": "Google Drive Manager",
+  "description": "Google Drive file management with search, read, create, upload, update, share, and info operations across multiple accounts.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "accounts": {
+        "type": "array",
+        "description": "Google accounts with Drive access (shared with gmail-manager).",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "email": { "type": "string" },
+            "type": { "type": "string", "enum": ["workspace", "personal"] }
+          },
+          "required": ["id", "email", "type"]
+        }
+      },
+      "oauth": {
+        "type": "object",
+        "description": "Google OAuth2 configuration (shared with gmail-manager).",
+        "properties": {
+          "clientId": { "type": "string" },
+          "clientSecret": { "type": "string" },
+          "redirectUri": { "type": "string" }
+        },
+        "required": ["clientId", "clientSecret", "redirectUri"]
+      },
+      "defaultAccount": {
+        "type": "string",
+        "description": "Default account ID to use when none specified."
+      },
+      "accountAliases": {
+        "type": "object",
+        "description": "Friendly aliases for account IDs (e.g., {\"work\": \"work\", \"personal\": \"xingfanxia\"}).",
+        "additionalProperties": { "type": "string" }
+      }
+    }
+  }
+}

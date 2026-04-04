@@ -1,0 +1,30 @@
+{
+  "id": "rss-digest",
+  "name": "RSS Digest",
+  "description": "Fetch, cache, and summarize RSS/Atom feeds. Provides rss_fetch tool and /rss command.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "opmlUrl": {
+        "type": "string",
+        "description": "URL to an OPML file containing RSS feed list"
+      },
+      "feeds": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Manual list of RSS/Atom feed URLs (used if no opmlUrl)"
+      },
+      "cacheTtlMinutes": {
+        "type": "number",
+        "description": "How long to cache fetched feeds (default: 60)",
+        "default": 60
+      },
+      "maxAgeHours": {
+        "type": "number",
+        "description": "Only return posts newer than this many hours (default: 24)",
+        "default": 24
+      }
+    }
+  }
+}

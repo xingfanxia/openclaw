@@ -1,0 +1,11 @@
+{
+  "name": "@openclaw/yt-downloader",
+  "version": "0.1.0",
+  "description": "Download videos via yt-dlp and upload to Google Drive",
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {},
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  }
+}
