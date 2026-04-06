@@ -230,15 +230,23 @@ export function parseTtsDirectives(
     return "";
   });
 
+  // Strip bare [[tts]]...[[/tts]] blocks — the system prompt tells the model
+  // these are valid (see buildTtsSystemPromptHint), so the parser must handle them.
+  // When a bare [[tts]] block is present, treat it as voice-only: suppress all
+  // visible text so only the voice message is delivered (no text+voice double send).
+  let hasBareBlock = false;
   const plainBlockRegex = /\[\[\s*tts\s*\]\]([\s\S]*?)\[\[\s*\/\s*tts\s*\]\]/gi;
   cleanedText = replaceOutsideMarkdownCode(cleanedText, plainBlockRegex, (_match, [inner = ""]) => {
     hasDirective = true;
-    const visible = inner.trim();
+    hasBareBlock = true;
     if (policy.allowText && overrides.ttsText == null) {
-      overrides.ttsText = visible;
+      overrides.ttsText = inner.trim();
     }
-    return visible;
+    return "";
   });
+  if (hasBareBlock) {
+    cleanedText = "";
+  }
 
   const directiveRegex = /\[\[\s*tts\s*:\s*([^\]]+)\]\]/gi;
   cleanedText = replaceOutsideMarkdownCode(cleanedText, directiveRegex, (_match, [body = ""]) => {

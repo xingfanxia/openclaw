@@ -567,5 +567,9 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "TTS",
       detailKeys: ["text", "channel"],
     },
+    current_time: {
+      emoji: "🕒",
+      title: "Current Time",
+    },
   },
 };

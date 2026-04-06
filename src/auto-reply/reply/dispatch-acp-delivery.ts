@@ -143,6 +143,7 @@ type AcpDispatchDeliveryState = {
   cleanBlockTtsDirectiveText?: ReturnType<typeof createTtsDirectiveTextStreamCleaner>;
   blockCount: number;
   deliveredFinalReply: boolean;
+  deliveredTtsAudio: boolean;
   deliveredVisibleText: boolean;
   failedVisibleTextDelivery: boolean;
   queuedDirectVisibleTextDeliveries: number;
@@ -164,6 +165,7 @@ export type AcpDispatchDeliveryCoordinator = {
   getAccumulatedBlockTtsText: () => string;
   settleVisibleText: () => Promise<void>;
   hasDeliveredFinalReply: () => boolean;
+  hasDeliveredTtsAudio: () => boolean;
   hasDeliveredVisibleText: () => boolean;
   hasFailedVisibleTextDelivery: () => boolean;
   getRoutedCounts: () => Record<ReplyDispatchKind, number>;
@@ -213,6 +215,7 @@ export function createAcpDispatchDeliveryCoordinator(params: {
       : undefined,
     blockCount: 0,
     deliveredFinalReply: false,
+    deliveredTtsAudio: false,
     deliveredVisibleText: false,
     failedVisibleTextDelivery: false,
     queuedDirectVisibleTextDeliveries: 0,
@@ -352,6 +355,9 @@ export function createAcpDispatchDeliveryCoordinator(params: {
       ttsAuto: params.sessionTtsAuto,
       skipTts: meta?.skipTts,
     });
+    if (ttsPayload.mediaUrl && !meta?.skipTts) {
+      state.deliveredTtsAudio = true;
+    }
 
     if (params.shouldRouteToOriginating && params.originatingChannel && params.originatingTo) {
       const toolCallId = normalizeOptionalString(meta?.toolCallId);
@@ -447,6 +453,7 @@ export function createAcpDispatchDeliveryCoordinator(params: {
     getAccumulatedBlockTtsText: () => state.accumulatedBlockTtsText,
     settleVisibleText: settleDirectVisibleText,
     hasDeliveredFinalReply: () => state.deliveredFinalReply,
+    hasDeliveredTtsAudio: () => state.deliveredTtsAudio,
     hasDeliveredVisibleText: () => state.deliveredVisibleText,
     hasFailedVisibleTextDelivery: () => state.failedVisibleTextDelivery,
     getRoutedCounts: () => ({ ...state.routedCounts }),

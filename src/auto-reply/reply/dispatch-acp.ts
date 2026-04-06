@@ -235,7 +235,12 @@ async function finalizeAcpTurnOutput(params: {
     ttsStatus != null && !(ttsStatus.autoMode === "inbound" && !params.inboundAudio);
 
   let finalMediaDelivered = false;
-  if (ttsMode === "final" && hasAccumulatedBlockText && canAttemptFinalTts) {
+  if (
+    ttsMode === "final" &&
+    hasAccumulatedBlockText &&
+    canAttemptFinalTts &&
+    !params.delivery.hasDeliveredTtsAudio()
+  ) {
     try {
       const { maybeApplyTtsToPayload } = await loadDispatchAcpTtsRuntime();
       const ttsSyntheticReply = await maybeApplyTtsToPayload({

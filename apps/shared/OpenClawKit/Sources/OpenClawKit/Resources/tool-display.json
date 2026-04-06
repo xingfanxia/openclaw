@@ -893,6 +893,10 @@
         "text",
         "channel"
       ]
+    },
+    "current_time": {
+      "emoji": "🕒",
+      "title": "Current Time"
     }
   }
 }
