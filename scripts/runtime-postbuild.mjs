@@ -126,6 +126,13 @@ const LEGACY_CLI_EXIT_COMPAT_CHUNKS = [
     dest: "dist/memory-state-DwGdReW4.js",
     contents: "export function hasMemoryRuntime() {\n  return false;\n}\n",
   },
+  // selfie reference face images — copied alongside the dist bundle so
+  // `path.dirname(import.meta.url) + "/reference-images/"` resolves correctly.
+  // Pre-compressed to 768x1152 Q85 JPG (~155KB each, 22x smaller than original PNG).
+  ...["mh_049", "mh_053", "mh_055", "mh_058", "mh_060"].map((name) => ({
+    src: `extensions/selfie/reference-images/${name}.jpg`,
+    dest: `dist/extensions/selfie/reference-images/${name}.jpg`,
+  })),
 ];
 
 export function writeStableRootRuntimeAliases(params = {}) {

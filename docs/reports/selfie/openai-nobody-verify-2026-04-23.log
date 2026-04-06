@@ -1,0 +1,38 @@
+Running 6 NO-BODY requests against OPENAI DIRECT in parallel…
+Comparing against baseline with body: 2/6 passing
+
+────────────────────────────────────────────────────────────────────────
+Done. Total wall time: 54.2s
+────────────────────────────────────────────────────────────────────────
+
+▸ cozy-cafe (cozy)
+  scene: Sitting at a minimalist cafe, holding latte, oversized cream cardigan, soft window light
+  minimal-nobody: ❌ 51.2s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help…
+  v2wrap-nobody:  ❌ 48.3s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help…
+
+▸ cozy-home (cozy)
+  scene: Lying on the couch in an oversized hoodie, messy bun, blanket, watching something on laptop, warm lamp light
+  minimal-nobody: ✅ 41.1s  130KB  /tmp/nobody-cozy-home-minimal-nobody.jpeg
+  v2wrap-nobody:  ✅ 54.2s  185KB  /tmp/nobody-cozy-home-v2wrap-nobody.jpeg
+
+▸ glam-street (glam)
+  scene: Golden hour on a downtown street, knit beige coat, slight smile, soft bokeh city lights behind
+  minimal-nobody: ✅ 49.6s  194KB  /tmp/nobody-glam-street-minimal-nobody.jpeg
+  v2wrap-nobody:  ❌ 46.6s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help…
+
+Summary: 3/6 succeeded (baseline with body: 2/6)
+→ Body spine IS a dominant moderation trigger. Remove it from production.
+
+Open to compare:
+  /tmp/nobody-cozy-home-minimal-nobody.jpeg
+  /tmp/nobody-cozy-home-v2wrap-nobody.jpeg
+  /tmp/nobody-glam-street-minimal-nobody.jpeg

@@ -1,0 +1,40 @@
+Running 6 requests in parallel (3 scenes × 2 modes)…
+
+────────────────────────────────────────────────────────────────────────
+Done. Total wall time: 133.6s
+────────────────────────────────────────────────────────────────────────
+
+▸ cozy-cafe (cozy)
+  scene: Sitting at a minimalist cafe, holding latte, oversized cream cardigan, soft window light
+  minimal:  ❌ 133.2s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at Azur…
+  v2-wrap:  ❌ 127.6s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at Azur…
+
+▸ cozy-home (cozy)
+  scene: Lying on the couch in an oversized hoodie, messy bun, blanket, watching something on laptop, warm lamp light
+  minimal:  ❌ 131.6s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at Azur…
+  v2-wrap:  ✅ 130.8s  187KB  /tmp/ab-cozy-home-v2-wrap.jpeg
+
+▸ glam-street (glam)
+  scene: Golden hour on a downtown street, knit beige coat, slight smile, soft bokeh city lights behind
+  minimal:  ❌ 130.1s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at Azur…
+  v2-wrap:  ❌ 133.6s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at Azur…
+
+Summary: 1/6 succeeded
+
+Open to compare:
+  /tmp/ab-cozy-home-v2-wrap.jpeg

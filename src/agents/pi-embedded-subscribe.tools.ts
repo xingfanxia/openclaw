@@ -235,6 +235,7 @@ const TRUSTED_TOOL_RESULT_MEDIA = new Set([
   "nodes",
   "process",
   "read",
+  "selfie_generate",
   "session_status",
   "sessions_history",
   "sessions_list",

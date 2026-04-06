@@ -1,0 +1,38 @@
+Running 6 requests against OPENAI DIRECT in parallel…
+
+────────────────────────────────────────────────────────────────────────
+Done. Total wall time: 51.6s
+────────────────────────────────────────────────────────────────────────
+
+▸ cozy-cafe (cozy)
+  scene: Sitting at a minimalist cafe, holding latte, oversized cream cardigan, soft window light
+  minimal:  ❌ 7.9s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help…
+  v2-wrap:  ❌ 50.2s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help…
+
+▸ cozy-home (cozy)
+  scene: Lying on the couch in an oversized hoodie, messy bun, blanket, watching something on laptop, warm lamp light
+  minimal:  ✅ 49.7s  150KB  /tmp/direct-cozy-home-minimal.jpeg
+  v2-wrap:  ✅ 48.9s  185KB  /tmp/direct-cozy-home-v2-wrap.jpeg
+
+▸ glam-street (glam)
+  scene: Golden hour on a downtown street, knit beige coat, slight smile, soft bokeh city lights behind
+  minimal:  ❌ 7.3s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help…
+  v2-wrap:  ❌ 51.6s  Image generation blocked by content filter — try a less explicit variant.
+      hard: HTTP 400: {
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help…
+
+Summary: 2/6 succeeded on OpenAI direct
+
+Open to compare:
+  /tmp/direct-cozy-home-minimal.jpeg
+  /tmp/direct-cozy-home-v2-wrap.jpeg

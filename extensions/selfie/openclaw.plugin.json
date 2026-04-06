@@ -1,18 +1,38 @@
 {
   "id": "selfie",
   "name": "Selfie Generator",
-  "description": "Generate selfie images using Gemini 3 Pro with face reference images for consistency.",
+  "description": "Generate selfie images with face reference images. cozy/glam → gpt-image-2 medium (Gemini fallback); chunyu/tease → Doubao Seedream 5.0-lite.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "openaiApiKey": {
+        "type": "string",
+        "description": "OpenAI direct API key for gpt-image-2. Used as fallback when the Azure OpenAI endpoint hits its rate limit (10 RPM). Falls back to OPENAI_API_KEY env var."
+      },
+      "azureOpenaiApiKey": {
+        "type": "string",
+        "description": "Azure OpenAI API key for gpt-image-2 (default cozy/glam provider). Falls back to AZURE_OPENAI_API_KEY env var."
+      },
+      "azureOpenaiEndpoint": {
+        "type": "string",
+        "description": "Azure OpenAI base URL, e.g. https://<resource>.openai.azure.com/openai/v1. Falls back to AZURE_OPENAI_ENDPOINT or AZURE_EXISTING_AIPROJECT_ENDPOINT env vars."
+      },
+      "azureOpenaiDeployment": {
+        "type": "string",
+        "description": "Azure deployment name. Default: gpt-image-2-1. Falls back to AZURE_OPENAI_DEPLOYMENT env var."
+      },
       "geminiApiKey": {
         "type": "string",
-        "description": "Gemini API key. Falls back to GEMINI_API_KEY env var."
+        "description": "Gemini API key (fallback for cozy/glam when gpt-image-2 filter trips ~10% of the time). Falls back to GEMINI_API_KEY env var."
+      },
+      "doubaoApiKey": {
+        "type": "string",
+        "description": "Doubao (Volcengine ARK) API key for the `chunyu` and `tease` styles. Falls back to ARK_API_KEY env var. Format: ark-xxxx."
       },
       "outputDir": {
         "type": "string",
-        "description": "Directory to save generated images. Default: /tmp/openclaw-selfies"
+        "description": "Directory to save generated images. Default: $HOME/.openclaw/media/selfies"
       },
       "proactiveSelfie": {
         "type": "object",
@@ -23,6 +43,89 @@
             "minimum": 0,
             "maximum": 1,
             "description": "Probability (0-1) of injecting a selfie hint per message. 0 = disabled."
+          }
+        }
+      },
+      "useNewDispatch": {
+        "type": "boolean",
+        "description": "Use the classifier/router/rescue dispatch path from the 2026-04-23 redesign. Default true. Set false to roll back to the legacy inline routing."
+      },
+      "persona": {
+        "type": "object",
+        "description": "Per-persona selfie taste. Rendered into the agent system prompt to shape scene authoring. Mirror of extensions/selfie/persona-config.ts PersonaSelfieConfig.",
+        "additionalProperties": false,
+        "properties": {
+          "version": { "type": "number", "enum": [1] },
+          "styleTags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Broad wardrobe taste tags the agent treats as inspirational."
+          },
+          "wardrobeCategories": {
+            "type": "array",
+            "description": "Structured wardrobe category menu. Agent rotates across these to avoid anchoring on one outfit.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["label", "examples"],
+              "properties": {
+                "label": { "type": "string" },
+                "examples": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "moodFit": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": ["casual", "flirty", "spicy", "extreme"]
+                  }
+                }
+              }
+            }
+          },
+          "compositionBias": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Preferred composition / pose patterns. High-priority directive — overrides generic 3/4 mirror portrait defaults."
+          },
+          "preferredSettings": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Settings to lean toward (not exclusive)."
+          },
+          "avoidSettings": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Settings the agent must avoid."
+          },
+          "baselineMood": {
+            "type": "string",
+            "enum": ["casual", "flirty", "spicy", "extreme"],
+            "description": "Default mood when the user gives no strong signal."
+          },
+          "faceVisibilityBias": {
+            "type": "string",
+            "enum": ["usually-full", "balanced", "frequently-obscured"],
+            "description": "Face visibility preference across generations."
+          },
+          "moodMapping": {
+            "type": "object",
+            "description": "User-keyword → style/mood/vantage mapping.",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "style": { "type": "string", "enum": ["cozy", "glam", "tease", "chunyu"] },
+                "mood": { "type": "string", "enum": ["casual", "flirty", "spicy", "extreme"] },
+                "defaultVantage": { "type": "string", "enum": ["mirror", "frontcam"] }
+              },
+              "required": ["style", "mood"]
+            }
+          },
+          "notes": {
+            "type": "string",
+            "description": "Freeform persona notes for the agent."
           }
         }
       }
