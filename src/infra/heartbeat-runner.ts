@@ -694,6 +694,166 @@ function stripLeadingHeartbeatResponsePrefix(
   return text.replace(prefixPattern, "");
 }
 
+/**
+ * Detect if heartbeat reply text contains leaked model thinking/evaluation.
+ *
+ * Some models (notably Google Gemini) wrap their entire reasoning process
+ * inside `<final>` tags instead of separating it into `<think>`. This lets
+ * evaluation text ("Evaluate Heartbeat", "Current Time:", "Rule Check:", etc.)
+ * pass through the enforceFinalTag filter and get delivered as messages.
+ *
+ * Returns the cleaned text (thinking stripped) or null to suppress the reply.
+ */
+export function stripHeartbeatThinkingLeak(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  // Bare ack token (possibly wrapped in light markdown/HTML/quotes) — real
+  // heartbeat ack, not meta-commentary. Upstream `stripHeartbeatToken` handles
+  // these before we run, but defend the contract for direct callers/tests.
+  if (/^[*`~_<\s>"'(){}\[\]]*HEARTBEAT_OK[*`~_<\s>"'(){}\[\]\.!?]*$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  // ── Leak detection ─────────────────────────────────────────────────
+  // Strong markers — any one alone is enough. Real persona messages
+  // would never quote system tokens, debate scheduling, label analysis
+  // sections, or finalize with "Let's go with: …".
+  const strongMarkers = [
+    /^(?:Evaluate|Evaluating)\s+Heartbeat/im,
+    // System token mentioned anywhere — edge-position HEARTBEAT_OK is
+    // removed upstream, so a remaining occurrence is meta-commentary.
+    /\bHEARTBEAT_OK\b/,
+    // Model debating its own output, e.g. "I should output …", "I will reply …"
+    /\bI\s+(?:should|will|need to|am going to|am gonna|must)\s+(?:just\s+)?(?:output|reply|respond|answer|send)\b/i,
+    // References to the heartbeat scheduler itself
+    /\b(?:first|second|third|next|previous|this|last|each|every)\s+heartbeat\b/i,
+    /\bheartbeat\s+(?:tick|interval|scheduler|cycle|cadence|fired|fires|firing|run|ago)\b/i,
+    // Model deliberation / finalization heralding the actual message:
+    //   "Let's go with: …", "Let's output the text.", "I'll go with …"
+    /^\s*Let'?s\s+(?:go with|output|send|use|try|stick with|finalize|polish|just\s+(?:go|send|output|try))\b/im,
+    /^\s*I'?ll\s+(?:go with|output|send|use|stick with|finalize|polish)\b/im,
+    // Bulleted analysis section labels:
+    //   "• Action Planning:", "• Selfie check:", "• Refining the message:"
+    /^\s*[•*]\s*(?:Action Planning|State Check|Selfie [Cc]heck|Message idea|Refining the message|Review against Persona|Final Polish|Emotion|Selfie Decision|Decision|Plan|Mood|Tone|Persona|Polish|Final answer|Final output)\s*[:：]/im,
+    // Numbered analysis steps: "6. Review against Persona:", "7. Final Polish:"
+    /^\s*\d+\.\s+(?:Review against Persona|Final Polish|Action Planning|State Check|Selfie [Cc]heck|Output|Decision|Plan|Persona|Mood|Tone|Refining the message)\b/im,
+    // Bare label lines on their own
+    /^\s*(?:Action Planning|State Check|Selfie [Cc]heck|Message idea|Refining the message|Review against Persona|Final Polish|Selfie Decision|Decision|Plan|Persona|Mood|Tone|Final answer|Final output)\s*[:：]\s*$/im,
+  ];
+
+  // Supporting markers — need 2+ (or 1+ alongside heavy bullets).
+  const supportingMarkers = [
+    /[•*]\s*Current\s*Time:/i,
+    /[•*]\s*(?:Last user message|Time elapsed|Rule Check|Context):/i,
+    /\bHeartbeat\b.*\b(?:evaluation|check|poll|rule|timestamp|temperature)\b/i,
+    /\bMessage generation:/i,
+    /\bOutput\.\s*$/i,
+    /(?:^|[\n\s])-\s*(?:AX'?s|the user'?s|user'?s)\s+(?:state|location|status|recent activity):/i,
+    /(?:^|[\n\s])-?\s*Heartbeat\s+rules?:/i,
+    /(?:^|[\n\s])-?\s*Conclusion\s*[:：]/i,
+    /\bConclusion\s*[:：]\s*(?:Nothing to send|Stay silent|Output|Skip|Send|Let him|Let her)/i,
+  ];
+
+  const strongMatch = strongMarkers.some((re) => re.test(trimmed));
+  const supportCount = supportingMarkers.filter((re) => re.test(trimmed)).length;
+  // High-density bullet outline (4+ top-level bullets) signals
+  // stream-of-consciousness eval.
+  const bulletLines = (trimmed.match(/^\s*[•*]\s+/gm) ?? []).length;
+  const heavyBullets = bulletLines >= 4;
+  if (!strongMatch && supportCount < 2 && !(heavyBullets && supportCount >= 1)) {
+    return trimmed; // Not a leak.
+  }
+
+  // ── Line-level cleanup ─────────────────────────────────────────────
+  // Walk paragraphs (split by blank line) and filter out eval lines from
+  // each. Returns joined clean content; null if everything was eval. This
+  // handles cases where eval and the real message share a paragraph
+  // (e.g. "Let's output the text.\n<actual message>").
+  const paragraphs = trimmed.split(/\n{2,}/);
+  const cleaned: string[] = [];
+  for (const p of paragraphs) {
+    const lines = p.split("\n");
+    const keep: string[] = [];
+    for (const ln of lines) {
+      if (!isHeartbeatEvalLine(ln)) keep.push(ln);
+    }
+    const c = keep.join("\n").trim();
+    if (c) cleaned.push(c);
+  }
+  if (cleaned.length === 0) return null;
+  return cleaned.join("\n\n");
+}
+
+/**
+ * Classify a single line as eval / clean. Conservative: only flags lines
+ * that are clearly model thinking, never plain prose.
+ */
+function isHeartbeatEvalLine(rawLine: string): boolean {
+  const t = rawLine.trim();
+  if (!t) return false;
+  // Top-level bullet ("• …", "* …")
+  if (/^[•*]\s/.test(t)) return true;
+  // Indented sub-bullet (•/*/-)
+  if (/^\s+[•*\-]\s/.test(rawLine)) return true;
+  // Eval header line "Evaluate Heartbeat" / "Evaluating Heartbeat …"
+  if (/^(?:Evaluate|Evaluating)\s+Heartbeat\b/i.test(t)) return true;
+  // Standalone "Output." / "Output:" on its own line
+  if (/^Output[.:]?\s*$/i.test(t)) return true;
+  // Numbered analysis step ("6. Review against Persona:")
+  if (
+    /^\d+\.\s+(?:Review|Final|Action|State|Selfie|Message|Refining|Output|Polish|Emotion|Decision|Plan|Persona|Mood|Tone|Step|Conclusion)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // Eval label prefix (label + colon, content optional)
+  if (
+    /^(?:Action Planning|State Check|Selfie [Cc]heck|Message idea|Message generation|Refining the message|Review against Persona|Final Polish|Selfie Decision|Decision|Plan|Persona|Mood|Tone|Final answer|Final output|Conclusion|Output|Emotion|Polish|Step \d+)\s*[:：]/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // Model self-talk / finalization
+  if (
+    /^Let'?s\s+(?:go with|output|send|use|try|stick with|finalize|polish|skip|look at|see|just|start)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (/^I'?ll\s+(?:go with|output|send|use|stick with|skip|just|finalize|polish)\b/i.test(t)) {
+    return true;
+  }
+  if (
+    /^I\s+(?:will|should|need to|am going to|am gonna|must|can)\s+(?:just\s+)?(?:output|send|use|reply|respond|answer|skip|finalize|polish|go)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // Reconsidering / let-me self-talk ("Wait, let me reconsider the message.")
+  if (/^(?:Wait|Hmm|Actually|So|OK|Okay)[,.]?\s+let me\b/i.test(t)) return true;
+  if (/^Let me\s+(?:reconsider|think|check|see|polish|finalize|just|go with|use|try)\b/i.test(t)) {
+    return true;
+  }
+  // System token mention
+  if (/\bHEARTBEAT_OK\b/.test(t)) return true;
+  // Eval dash-list (specific eval words after the dash)
+  if (
+    /^-\s+(?:AX'?s|the user'?s|user'?s|Heartbeat|Conclusion|Rule|It's|Since\b|If\b|I should|I'?ll|I will)/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function normalizeHeartbeatReply(
   payload: ReplyPayload,
   responsePrefix: string | undefined,
@@ -713,7 +873,13 @@ function normalizeHeartbeatReply(
       hasMedia,
     };
   }
-  let finalText = stripped.text;
+  // Strip leaked thinking/evaluation from the reply text.
+  const cleanedText = stripHeartbeatThinkingLeak(stripped.text);
+  if (cleanedText === null) {
+    // Entire reply was evaluation — treat as HEARTBEAT_OK.
+    return { shouldSkip: true, text: "", hasMedia };
+  }
+  let finalText = cleanedText;
   if (responsePrefix && finalText && !finalText.startsWith(responsePrefix)) {
     finalText = `${responsePrefix} ${finalText}`;
   }
@@ -1653,7 +1819,17 @@ export async function runHeartbeatOnce(opts: {
       return { status: "ran", durationMs: Date.now() - startedAt };
     }
 
-    if (!heartbeatToolResponse && (!replyPayload || !hasOutboundReplyContent(replyPayload))) {
+    // Incomplete-turn errors (e.g., Gemini returning stopReason=stop with 0
+    // visible output tokens) arrive here as an isError payload containing
+    // "⚠️ Agent couldn't generate a response." A heartbeat has no user-visible
+    // contract to uphold, so surfacing that as if the persona had sent it is
+    // worse than silence. Treat isError heartbeat payloads as a silent
+    // HEARTBEAT_OK so the persona simply doesn't ping this tick.
+    const isErrorHeartbeat = replyPayload?.isError === true;
+    if (
+      !heartbeatToolResponse &&
+      (!replyPayload || !hasOutboundReplyContent(replyPayload) || isErrorHeartbeat)
+    ) {
       await restoreHeartbeatUpdatedAt({
         storePath,
         sessionKey,

@@ -250,6 +250,48 @@ describe("runHeartbeatOnce ack handling", () => {
     });
   });
 
+  it("suppresses isError heartbeat payloads (e.g. incomplete-turn) as silent ok-empty", async () => {
+    await withTempTelegramHeartbeatSandbox(async ({ tmpDir, storePath, replySpy }) => {
+      const cfg = createHeartbeatConfig({
+        tmpDir,
+        storePath,
+        heartbeat: { every: "5m", target: "telegram" },
+        channels: {
+          telegram: {
+            token: "test-token",
+            allowFrom: ["*"],
+            heartbeat: { showOk: false },
+          },
+        },
+      });
+
+      await seedMainSessionStore(storePath, cfg, {
+        lastChannel: "telegram",
+        lastProvider: "telegram",
+        lastTo: TELEGRAM_GROUP,
+      });
+
+      // Mirrors what pi-embedded-runner returns when stopReason=stop and
+      // payloads=0 (Gemini empty-text surface). Without suppression the
+      // heartbeat persona would send this text verbatim to the user.
+      replySpy.mockResolvedValue({
+        text: "⚠️ Agent couldn't generate a response. Please try again.",
+        isError: true,
+      });
+      const sendTelegram = createMessageSendSpy();
+
+      await runHeartbeatOnce({
+        cfg,
+        deps: {
+          ...makeTelegramDeps({ sendTelegram }),
+          getReplyFromConfig: replySpy,
+        },
+      });
+
+      expect(sendTelegram).not.toHaveBeenCalled();
+    });
+  });
+
   it("skips heartbeat LLM calls when visibility disables all output", async () => {
     await withTempHeartbeatSandbox(async ({ tmpDir, storePath, replySpy }) => {
       const cfg = createWhatsAppHeartbeatConfig({
