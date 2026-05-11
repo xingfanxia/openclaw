@@ -21,6 +21,7 @@ import {
   createDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
 } from "../infra/diagnostic-trace-context.js";
+import { getHeartbeatWakeHealth } from "../infra/heartbeat-wake.js";
 import { resolveAssistantIdentity } from "./assistant-identity.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
 import {
@@ -149,11 +150,15 @@ function getPluginRouteRuntimeScopesModule() {
   return pluginRouteRuntimeScopesModulePromise;
 }
 
-const GATEWAY_PROBE_STATUS_BY_PATH = new Map<string, "live" | "ready">([
+const GATEWAY_PROBE_STATUS_BY_PATH = new Map<string, "live" | "ready" | "heartbeat">([
   ["/health", "live"],
   ["/healthz", "live"],
   ["/ready", "ready"],
   ["/readyz", "ready"],
+  // Heartbeat-aware liveness — 503s when the wake module is stuck or no
+  // heartbeat has completed in 2× expected interval. Use this as the Docker
+  // healthcheck for the gateway so a deadlocked main loop fails health.
+  ["/healthz/heartbeat", "heartbeat"],
 ]);
 const pluginGatewayAuthBypassPathsCache = new WeakMap<
   OpenClawConfig,
@@ -298,7 +303,19 @@ async function handleGatewayProbeRequest(
 
   let statusCode: number;
   let body: string;
-  if (status === "ready" && getReadiness) {
+  if (status === "heartbeat") {
+    const health = getHeartbeatWakeHealth();
+    statusCode = health.ok ? 200 : 503;
+    body = JSON.stringify({
+      ok: health.ok,
+      status: "heartbeat",
+      running: health.running,
+      lastWakeStartedAt: health.lastWakeStartedAt,
+      lastWakeCompletedAt: health.lastWakeCompletedAt,
+      expectedIntervalMs: health.expectedIntervalMs,
+      ...(health.reason ? { reason: health.reason } : {}),
+    });
+  } else if (status === "ready" && getReadiness) {
     const includeDetails = await canRevealReadinessDetails({
       req,
       resolvedAuth,
@@ -536,7 +553,8 @@ export function createGatewayHttpServer(opts: {
 
     try {
       const requestPath = new URL(req.url ?? "/", "http://localhost").pathname;
-      if (GATEWAY_PROBE_STATUS_BY_PATH.get(requestPath) === "live") {
+      const earlyProbeStatus = GATEWAY_PROBE_STATUS_BY_PATH.get(requestPath);
+      if (earlyProbeStatus === "live" || earlyProbeStatus === "heartbeat") {
         await handleGatewayProbeRequest(
           req,
           res,

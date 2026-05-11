@@ -67,12 +67,17 @@ services:
         "18789",
       ]
     healthcheck:
+      # Heartbeat-aware liveness: `/healthz/heartbeat` returns 503 when the
+      # wake module is stuck (`running` past the 5min watchdog cap) or no wake
+      # has completed within 2× the smallest configured interval. During fresh
+      # startup (no heartbeat completed yet) it still returns 200, so the
+      # interval/start_period below is sized for that grace window.
       test:
         [
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:18789/healthz/heartbeat').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 5s

@@ -7,6 +7,7 @@ import { isRestartEnabled } from "../config/commands.flags.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import type { HeartbeatRunner } from "../infra/heartbeat-runner.js";
+import { resetHeartbeatWakeRunningState } from "../infra/heartbeat-wake.js";
 import { resetDirectoryCache } from "../infra/outbound/target-resolver.js";
 import {
   deferGatewayRestartUntilIdle,
@@ -269,6 +270,16 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
     nextState.hookClientIpConfig = resolveHookClientIpConfig(nextConfig);
 
     if (plan.restartHeartbeat) {
+      // Clear wake-module module-level state BEFORE feeding the new config so
+      // a previously-stuck `running=true` (e.g. from a hung outbound delivery)
+      // doesn't latch the scheduler past the reload. Logs once if recovery
+      // actually freed a stuck wake.
+      const reset = resetHeartbeatWakeRunningState();
+      if (reset.wasRunning) {
+        params.logReload.warn(
+          `heartbeat: hot-reload cleared stuck wake (stuckMs=${reset.wasStuckMs ?? "unknown"})`,
+        );
+      }
       nextState.heartbeatRunner.updateConfig(nextConfig);
     }
 

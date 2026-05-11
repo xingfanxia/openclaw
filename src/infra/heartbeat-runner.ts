@@ -124,11 +124,40 @@ import {
   type HeartbeatWakeSource,
   isRetryableHeartbeatBusySkipReason,
   requestHeartbeat,
+  setHeartbeatExpectedIntervalMs,
   setHeartbeatsEnabled,
   setHeartbeatWakeHandler,
 } from "./heartbeat-wake.js";
 import type { OutboundSendDeps } from "./outbound/deliver.js";
 import { deliverOutboundPayloads } from "./outbound/deliver.js";
+
+// Heartbeat outbound delivery must not block the wake handler indefinitely:
+// pair with the heartbeat-wake watchdog so a stuck Telegram/channel send
+// surfaces as an error within the wake budget, freeing the `running` lock.
+const HEARTBEAT_DELIVERY_TIMEOUT_MS = 60_000;
+
+async function deliverHeartbeatPayloadsWithTimeout(
+  params: Parameters<typeof deliverOutboundPayloads>[0],
+): Promise<void> {
+  let timeoutHandle: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(
+        new Error(
+          `heartbeat: deliverOutboundPayloads exceeded ${HEARTBEAT_DELIVERY_TIMEOUT_MS}ms (channel=${params.channel})`,
+        ),
+      );
+    }, HEARTBEAT_DELIVERY_TIMEOUT_MS);
+    timeoutHandle.unref?.();
+  });
+  try {
+    await Promise.race([deliverOutboundPayloads(params), timeoutPromise]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
 import { buildOutboundSessionContext } from "./outbound/session-context.js";
 import {
   resolveHeartbeatDeliveryTarget,
@@ -1743,7 +1772,7 @@ export async function runHeartbeatOnce(opts: {
         return false;
       }
     }
-    await deliverOutboundPayloads({
+    await deliverHeartbeatPayloadsWithTimeout({
       cfg,
       channel: delivery.channel,
       to: delivery.to,
@@ -2022,7 +2051,7 @@ export async function runHeartbeatOnce(opts: {
       }
     }
 
-    await deliverOutboundPayloads({
+    await deliverHeartbeatPayloadsWithTimeout({
       cfg,
       channel: delivery.channel,
       to: delivery.to,
@@ -2304,6 +2333,12 @@ export function startHeartbeatRunner(opts: {
         log.info("heartbeat: started", { intervalMs: Math.min(...intervals) });
       }
     }
+
+    // Publish the smallest live interval so the wake module / healthcheck can
+    // detect "no heartbeat in 2× interval" deadlocks. null when disabled.
+    setHeartbeatExpectedIntervalMs(
+      nextEnabled && intervals.length > 0 ? Math.min(...intervals) : null,
+    );
 
     scheduleNext();
   };
