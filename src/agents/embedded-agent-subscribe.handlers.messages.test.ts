@@ -1231,6 +1231,41 @@ describe("handleMessageEnd", () => {
     expect(emitBlockReply).not.toHaveBeenCalled();
   });
 
+  it("keeps final media but omits duplicate text when text_end already delivered the caption", () => {
+    const emitBlockReply = vi.fn();
+    const consumeReplyDirectives = vi.fn((text: string) =>
+      text ? parseReplyDirectives(text) : null,
+    );
+    const ctx = createMessageEndContext({
+      emitBlockReply,
+      consumeReplyDirectives,
+      state: {
+        emittedAssistantUpdate: true,
+        lastStreamedAssistantCleaned: "Caption",
+        blockReplyBreak: "text_end",
+        lastBlockReplyText: "Caption",
+        deltaBuffer: "",
+        blockBuffer: "",
+        pendingToolMediaUrls: ["/tmp/final.png"],
+      },
+    });
+
+    void handleMessageEnd(ctx, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Caption\nMEDIA:/tmp/final.png" }],
+        usage: { input: 10, output: 5, total: 15 },
+      },
+    } as never);
+
+    expect(emitBlockReply).toHaveBeenCalledTimes(1);
+    expect(firstMockArg(emitBlockReply, "block reply")).toMatchObject({
+      text: "",
+      mediaUrls: ["/tmp/final.png"],
+    });
+  });
+
   it("emits final media after flushing buffered message_end text", () => {
     const emitBlockReply = vi.fn();
     const flushBlockReplyBuffer = vi.fn();

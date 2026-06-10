@@ -1181,7 +1181,12 @@ export function handleMessageEnd(
           );
         } else {
           const alreadyDeliveredFinalText = Boolean(
-            hasMedia && cleanedText && cleanedText === ctx.state.lastBlockReplyText,
+            hasMedia &&
+            cleanedText &&
+            ctx.state.lastBlockReplyText != null &&
+            ctx.state.blockReplyBreak === "text_end" &&
+            normalizeTextForComparison(cleanedText) ===
+              normalizeTextForComparison(ctx.state.lastBlockReplyText),
           );
           ctx.state.lastBlockReplyText = hasMedia ? cleanedText || text : text;
           ctx.state.lastDeliveredBlockReplyText = hasMedia ? cleanedText || text : text;
