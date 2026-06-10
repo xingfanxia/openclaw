@@ -91,6 +91,14 @@ let timer: NodeJS.Timeout | null = null;
 let timerDueAt: number | null = null;
 let timerKind: WakeTimerKind | null = null;
 
+// Fork liveness state: track wake progress so health checks and hot-reload can
+// detect or clear a stuck `running` lock.
+let lastWakeCompletedAt: number | null = null;
+let lastWakeStartedAt: number | null = null;
+let expectedIntervalMs: number | null = null;
+const WAKE_HANDLER_TIMEOUT_MS = 5 * 60 * 1000;
+const WAKE_HANDLER_MIN_GRACE_MS = 60 * 1000;
+
 const DEFAULT_COALESCE_MS = 250;
 const DEFAULT_RETRY_MS = 1_000;
 const REASON_PRIORITY = {
@@ -225,6 +233,7 @@ function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
       const pendingBatch = Array.from(pendingWakes.values());
       pendingWakes.clear();
       running = true;
+      lastWakeStartedAt = Date.now();
       try {
         for (const pendingWake of pendingBatch) {
           const wakeOpts = {
@@ -235,7 +244,7 @@ function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
             ...(pendingWake.sessionKey ? { sessionKey: pendingWake.sessionKey } : {}),
             ...(pendingWake.heartbeat ? { heartbeat: pendingWake.heartbeat } : {}),
           };
-          const res = await active(wakeOpts);
+          const res = await raceWakeHandler(active(wakeOpts), pendingWake);
           if (res.status === "skipped" && isRetryableHeartbeatBusySkipReason(res.reason)) {
             // The target runtime is busy; retry this wake target soon.
             queuePendingWakeReason({
@@ -264,6 +273,8 @@ function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
         schedule(DEFAULT_RETRY_MS, "retry");
       } finally {
         running = false;
+        lastWakeCompletedAt = Date.now();
+        lastWakeStartedAt = null;
         if (pendingWakes.size > 0 || scheduled) {
           schedule(delay, "normal");
         }
@@ -343,6 +354,103 @@ export function hasPendingHeartbeatWake() {
   return pendingWakes.size > 0 || Boolean(timer) || scheduled;
 }
 
+async function raceWakeHandler(
+  inner: Promise<HeartbeatRunResult>,
+  pendingWake: PendingWakeReason,
+): Promise<HeartbeatRunResult> {
+  let timeoutHandle: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<HeartbeatRunResult>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(
+        new Error(
+          `heartbeat-wake: handler exceeded ${WAKE_HANDLER_TIMEOUT_MS}ms (source=${pendingWake.source} reason=${pendingWake.reason ?? ""})`,
+        ),
+      );
+    }, WAKE_HANDLER_TIMEOUT_MS);
+    timeoutHandle.unref?.();
+  });
+  try {
+    return await Promise.race([inner, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
+export function setHeartbeatExpectedIntervalMs(ms: number | null): void {
+  if (ms === null || !Number.isFinite(ms) || ms <= 0) {
+    expectedIntervalMs = null;
+    return;
+  }
+  expectedIntervalMs = ms;
+}
+
+export type HeartbeatWakeHealth = {
+  ok: boolean;
+  running: boolean;
+  lastWakeStartedAt: number | null;
+  lastWakeCompletedAt: number | null;
+  expectedIntervalMs: number | null;
+  reason?: string;
+};
+
+export function getHeartbeatWakeHealth(): HeartbeatWakeHealth {
+  const now = Date.now();
+  const state: HeartbeatWakeHealth = {
+    ok: true,
+    running,
+    lastWakeStartedAt,
+    lastWakeCompletedAt,
+    expectedIntervalMs,
+  };
+  if (running && typeof lastWakeStartedAt === "number") {
+    const stuckFor = now - lastWakeStartedAt;
+    if (stuckFor > WAKE_HANDLER_TIMEOUT_MS) {
+      state.ok = false;
+      state.reason = `wake handler stuck for ${stuckFor}ms (cap ${WAKE_HANDLER_TIMEOUT_MS}ms)`;
+      return state;
+    }
+  }
+  if (typeof expectedIntervalMs === "number" && expectedIntervalMs > 0) {
+    const overdueThreshold = Math.max(
+      expectedIntervalMs * 2 + WAKE_HANDLER_MIN_GRACE_MS,
+      WAKE_HANDLER_MIN_GRACE_MS,
+    );
+    if (lastWakeCompletedAt === null) {
+      return state;
+    }
+    const age = now - lastWakeCompletedAt;
+    if (age > overdueThreshold) {
+      state.ok = false;
+      state.reason = `last wake completed ${age}ms ago (threshold ${overdueThreshold}ms)`;
+    }
+  }
+  return state;
+}
+
+export function resetHeartbeatWakeRunningState(): {
+  wasRunning: boolean;
+  wasStuckMs: number | null;
+} {
+  const wasRunning = running;
+  const wasStuckMs =
+    running && typeof lastWakeStartedAt === "number" ? Date.now() - lastWakeStartedAt : null;
+  if (timer) {
+    clearTimeout(timer);
+  }
+  timer = null;
+  timerDueAt = null;
+  timerKind = null;
+  running = false;
+  scheduled = false;
+  lastWakeStartedAt = null;
+  if (handler && pendingWakes.size > 0) {
+    schedule(DEFAULT_COALESCE_MS, "normal");
+  }
+  return { wasRunning, wasStuckMs };
+}
+
 export function resetHeartbeatWakeStateForTests() {
   if (timer) {
     clearTimeout(timer);
@@ -353,6 +461,9 @@ export function resetHeartbeatWakeStateForTests() {
   pendingWakes.clear();
   scheduled = false;
   running = false;
+  lastWakeCompletedAt = null;
+  lastWakeStartedAt = null;
+  expectedIntervalMs = null;
   handlerGeneration += 1;
   handler = null;
 }
