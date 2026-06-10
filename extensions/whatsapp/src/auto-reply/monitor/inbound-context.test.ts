@@ -1,3 +1,4 @@
+// Whatsapp tests cover inbound context plugin behavior.
 import { describe, expect, it } from "vitest";
 import type { WhatsAppSendResult } from "../../inbound/send-result.js";
 import {
@@ -11,7 +12,6 @@ function acceptedSendResult(kind: "media" | "text", id: string): WhatsAppSendRes
   return {
     kind,
     messageId: id,
-    messageIds: [id],
     keys: [{ id }],
     providerAccepted: true,
   };
@@ -60,10 +60,11 @@ describe("whatsapp inbound context visibility", () => {
     });
 
     expect(history).toEqual([
-      expect.objectContaining({
+      {
         sender: "Alice (+111)",
         body: "Allowed context",
-      }),
+        senderJid: "111@s.whatsapp.net",
+      },
     ]);
   });
 
@@ -86,12 +87,15 @@ describe("whatsapp inbound context visibility", () => {
       groupAllowFrom: ["+111"],
     });
 
-    expect(reply).toMatchObject({
+    expect(reply).toEqual({
       id: "blocked-reply",
       body: "Blocked quoted text",
-      sender: expect.objectContaining({
+      sender: {
+        jid: "999@s.whatsapp.net",
+        lid: null,
+        e164: "+999",
         label: "Mallory (+999)",
-      }),
+      },
     });
   });
 });

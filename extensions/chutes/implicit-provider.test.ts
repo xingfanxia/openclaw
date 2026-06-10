@@ -1,10 +1,19 @@
+// Chutes tests cover implicit provider plugin behavior.
 import { registerSingleProviderPlugin } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { resolveOAuthApiKeyMarker } from "openclaw/plugin-sdk/provider-auth";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import plugin from "./index.js";
-import { CHUTES_BASE_URL } from "./models.js";
+import { CHUTES_BASE_URL, clearChutesModelCacheForTests } from "./models.js";
 
 const CHUTES_OAUTH_MARKER = resolveOAuthApiKeyMarker("chutes");
+
+function restoreEnvVar(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
 
 async function runChutesCatalog(params: { apiKey?: string; discoveryApiKey?: string }) {
   const provider = await registerSingleProviderPlugin(plugin);
@@ -26,6 +35,17 @@ async function runChutesCatalogProvider(params: { apiKey: string; discoveryApiKe
   return result.provider;
 }
 
+function readAuthorizationHeader(init?: { headers?: HeadersInit }): string {
+  const headers = init?.headers;
+  if (headers instanceof Headers) {
+    return headers.get("Authorization") ?? "";
+  }
+  if (Array.isArray(headers)) {
+    return headers.find(([key]) => key.toLowerCase() === "authorization")?.[1] ?? "";
+  }
+  return headers?.Authorization ?? headers?.authorization ?? "";
+}
+
 async function withRealChutesDiscovery<T>(
   run: (fetchMock: ReturnType<typeof vi.fn>) => Promise<T>,
 ) {
@@ -44,13 +64,17 @@ async function withRealChutesDiscovery<T>(
   try {
     return await run(fetchMock);
   } finally {
-    process.env.VITEST = originalVitest;
-    process.env.NODE_ENV = originalNodeEnv;
+    restoreEnvVar("VITEST", originalVitest);
+    restoreEnvVar("NODE_ENV", originalNodeEnv);
     globalThis.fetch = originalFetch;
   }
 }
 
 describe("chutes implicit provider auth mode", () => {
+  beforeEach(() => {
+    clearChutesModelCacheForTests();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -92,8 +116,8 @@ describe("chutes implicit provider auth mode", () => {
 
       const chutesCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("chutes.ai"));
       expect(chutesCalls.length).toBeGreaterThan(0);
-      const request = chutesCalls[0]?.[1] as { headers?: Record<string, string> } | undefined;
-      expect(request?.headers?.Authorization).toBe("Bearer my-chutes-access-token");
+      const request = chutesCalls[0]?.[1] as { headers?: HeadersInit } | undefined;
+      expect(readAuthorizationHeader(request)).toBe("Bearer my-chutes-access-token");
     });
   });
 });

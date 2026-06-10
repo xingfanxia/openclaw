@@ -1,4 +1,5 @@
-import type { MessagingToolSend } from "../../agents/pi-embedded-messaging.types.js";
+/** Prepares queued follow-up payloads for source-channel delivery. */
+import type { MessagingToolSend } from "../../agents/embedded-agent-messaging.types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { stripHeartbeatToken } from "../heartbeat.js";
 import type { OriginatingChannelType } from "../templating.js";
@@ -23,6 +24,7 @@ function hasReplyPayloadMedia(payload: ReplyPayload): boolean {
   return Array.isArray(payload.mediaUrls) && payload.mediaUrls.some((url) => url.trim().length > 0);
 }
 
+/** Strips heartbeat tokens, applies threading, and dedupes message-tool sends. */
 export function resolveFollowupDeliveryPayloads(params: {
   cfg: OpenClawConfig;
   payloads: ReplyPayload[];
@@ -46,18 +48,20 @@ export function resolveFollowupDeliveryPayloads(params: {
     params.originatingAccountId,
     params.originatingChatType,
   );
-  const sanitizedPayloads = params.payloads.flatMap((payload) => {
+  const sanitizedPayloads: ReplyPayload[] = [];
+  for (const payload of params.payloads) {
     const text = payload.text;
     if (!text || !text.includes("HEARTBEAT_OK")) {
-      return [payload];
+      sanitizedPayloads.push(payload);
+      continue;
     }
     const stripped = stripHeartbeatToken(text, { mode: "message" });
     const hasMedia = hasReplyPayloadMedia(payload);
     if (stripped.shouldSkip && !hasMedia) {
-      return [];
+      continue;
     }
-    return [{ ...payload, text: stripped.text }];
-  });
+    sanitizedPayloads.push({ ...payload, text: stripped.text });
+  }
   const replyTaggedPayloads = applyReplyThreading({
     payloads: sanitizedPayloads,
     replyToMode,

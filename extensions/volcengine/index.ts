@@ -1,3 +1,4 @@
+// Volcengine plugin entrypoint registers its OpenClaw integration.
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { createProviderApiKeyAuthMethod } from "openclaw/plugin-sdk/provider-auth-api-key";
 import { ensureModelAllowlistEntry } from "openclaw/plugin-sdk/provider-onboard";
@@ -21,6 +22,7 @@ export default definePluginEntry({
       label: "Volcengine",
       docsPath: "/concepts/model-providers#volcano-engine-doubao",
       envVars: ["VOLCANO_ENGINE_API_KEY"],
+      hookAliases: ["volcengine-plan"],
       auth: [
         createProviderApiKeyAuthMethod({
           providerId: PROVIDER_ID,
@@ -81,6 +83,7 @@ export default definePluginEntry({
         }));
         return [...volcengineModels, ...volcenginePlanModels];
       },
+      normalizeResolvedModel: ({ model }) => applyVolcengineToolSchemaCompat(model),
     });
   },
 });

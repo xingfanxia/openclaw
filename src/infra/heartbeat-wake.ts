@@ -1,4 +1,6 @@
-import { normalizeOptionalString } from "../shared/string-coerce.js";
+// Tracks heartbeat wake requests, busy skips, and retry timing.
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { resolveTimerTimeoutMs } from "../shared/number-coercion.js";
 import { normalizeHeartbeatWakeReason } from "./heartbeat-reason.js";
 
 export type HeartbeatRunResult =
@@ -41,13 +43,19 @@ export type HeartbeatWakeSource =
   | "retry"
   | "other";
 
+export type HeartbeatWakeOverride = {
+  target?: string;
+  to?: string | undefined;
+  accountId?: string | undefined;
+};
+
 export type HeartbeatWakeRequest = {
   source: HeartbeatWakeSource;
   intent: HeartbeatWakeIntent;
   reason?: string;
   agentId?: string;
   sessionKey?: string;
-  heartbeat?: { target?: string };
+  heartbeat?: HeartbeatWakeOverride;
 };
 
 export type HeartbeatWakeHandler = (opts: HeartbeatWakeRequest) => Promise<HeartbeatRunResult>;
@@ -71,7 +79,7 @@ type PendingWakeReason = {
   requestedAt: number;
   agentId?: string;
   sessionKey?: string;
-  heartbeat?: { target?: string };
+  heartbeat?: HeartbeatWakeOverride;
 };
 
 let handler: HeartbeatWakeHandler | null = null;
@@ -82,15 +90,6 @@ let running = false;
 let timer: NodeJS.Timeout | null = null;
 let timerDueAt: number | null = null;
 let timerKind: WakeTimerKind | null = null;
-
-// Liveness/watchdog state (fork): track when a wake last completed so the
-// healthcheck and hot-reload paths can detect a stuck `running` lock and the
-// timer callback can enforce a hard cap on `await active(...)`.
-let lastWakeCompletedAt: number | null = null;
-let lastWakeStartedAt: number | null = null;
-let expectedIntervalMs: number | null = null;
-const WAKE_HANDLER_TIMEOUT_MS = 5 * 60 * 1000;
-const WAKE_HANDLER_MIN_GRACE_MS = 60 * 1000;
 
 const DEFAULT_COALESCE_MS = 250;
 const DEFAULT_RETRY_MS = 1_000;
@@ -144,7 +143,7 @@ function queuePendingWakeReason(params: {
   requestedAt?: number;
   agentId?: string;
   sessionKey?: string;
-  heartbeat?: { target?: string };
+  heartbeat?: HeartbeatWakeOverride;
 }) {
   const requestedAt = params.requestedAt ?? Date.now();
   const normalizedReason = normalizeWakeReason(params.reason);
@@ -187,7 +186,7 @@ function queuePendingWakeReason(params: {
 }
 
 function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
-  const delay = Number.isFinite(coalesceMs) ? Math.max(0, coalesceMs) : DEFAULT_COALESCE_MS;
+  const delay = resolveTimerTimeoutMs(coalesceMs, DEFAULT_COALESCE_MS, 0);
   const dueAt = Date.now() + delay;
   if (timer) {
     // Keep retry cooldown as a hard minimum delay. This prevents the
@@ -207,42 +206,52 @@ function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
   }
   timerDueAt = dueAt;
   timerKind = kind;
-  timer = setTimeout(async () => {
-    timer = null;
-    timerDueAt = null;
-    timerKind = null;
-    scheduled = false;
-    const active = handler;
-    if (!active) {
-      return;
-    }
-    if (running) {
-      scheduled = true;
-      schedule(delay, kind);
-      return;
-    }
+  timer = setTimeout(() => {
+    void (async () => {
+      timer = null;
+      timerDueAt = null;
+      timerKind = null;
+      scheduled = false;
+      const active = handler;
+      if (!active) {
+        return;
+      }
+      if (running) {
+        scheduled = true;
+        schedule(delay, kind);
+        return;
+      }
 
-    const pendingBatch = Array.from(pendingWakes.values());
-    pendingWakes.clear();
-    running = true;
-    lastWakeStartedAt = Date.now();
-    try {
-      for (const pendingWake of pendingBatch) {
-        const wakeOpts = {
-          source: pendingWake.source,
-          intent: pendingWake.intent,
-          reason: pendingWake.reason ?? undefined,
-          ...(pendingWake.agentId ? { agentId: pendingWake.agentId } : {}),
-          ...(pendingWake.sessionKey ? { sessionKey: pendingWake.sessionKey } : {}),
-          ...(pendingWake.heartbeat ? { heartbeat: pendingWake.heartbeat } : {}),
-        };
-        // Watchdog (fork): cap a single wake handler invocation so a stuck
-        // delivery / model call can't latch `running=true` forever and block
-        // every subsequent heartbeat. The underlying promise keeps running in
-        // the background but the lock is released so future wakes can fire.
-        const res = await raceWakeHandler(active(wakeOpts), pendingWake);
-        if (res.status === "skipped" && isRetryableHeartbeatBusySkipReason(res.reason)) {
-          // The target runtime is busy; retry this wake target soon.
+      const pendingBatch = Array.from(pendingWakes.values());
+      pendingWakes.clear();
+      running = true;
+      try {
+        for (const pendingWake of pendingBatch) {
+          const wakeOpts = {
+            source: pendingWake.source,
+            intent: pendingWake.intent,
+            reason: pendingWake.reason ?? undefined,
+            ...(pendingWake.agentId ? { agentId: pendingWake.agentId } : {}),
+            ...(pendingWake.sessionKey ? { sessionKey: pendingWake.sessionKey } : {}),
+            ...(pendingWake.heartbeat ? { heartbeat: pendingWake.heartbeat } : {}),
+          };
+          const res = await active(wakeOpts);
+          if (res.status === "skipped" && isRetryableHeartbeatBusySkipReason(res.reason)) {
+            // The target runtime is busy; retry this wake target soon.
+            queuePendingWakeReason({
+              source: pendingWake.source,
+              intent: pendingWake.intent,
+              reason: pendingWake.reason ?? "retry",
+              agentId: pendingWake.agentId,
+              sessionKey: pendingWake.sessionKey,
+              heartbeat: pendingWake.heartbeat,
+            });
+            schedule(DEFAULT_RETRY_MS, "retry");
+          }
+        }
+      } catch {
+        // Error is already logged by the heartbeat runner; schedule a retry.
+        for (const pendingWake of pendingBatch) {
           queuePendingWakeReason({
             source: pendingWake.source,
             intent: pendingWake.intent,
@@ -251,30 +260,15 @@ function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
             sessionKey: pendingWake.sessionKey,
             heartbeat: pendingWake.heartbeat,
           });
-          schedule(DEFAULT_RETRY_MS, "retry");
+        }
+        schedule(DEFAULT_RETRY_MS, "retry");
+      } finally {
+        running = false;
+        if (pendingWakes.size > 0 || scheduled) {
+          schedule(delay, "normal");
         }
       }
-    } catch {
-      // Error is already logged by the heartbeat runner; schedule a retry.
-      for (const pendingWake of pendingBatch) {
-        queuePendingWakeReason({
-          source: pendingWake.source,
-          intent: pendingWake.intent,
-          reason: pendingWake.reason ?? "retry",
-          agentId: pendingWake.agentId,
-          sessionKey: pendingWake.sessionKey,
-          heartbeat: pendingWake.heartbeat,
-        });
-      }
-      schedule(DEFAULT_RETRY_MS, "retry");
-    } finally {
-      running = false;
-      lastWakeCompletedAt = Date.now();
-      lastWakeStartedAt = null;
-      if (pendingWakes.size > 0 || scheduled) {
-        schedule(delay, "normal");
-      }
-    }
+    })();
   }, delay);
   timer.unref?.();
 }
@@ -328,7 +322,7 @@ export function requestHeartbeat(opts: {
   coalesceMs?: number;
   agentId?: string;
   sessionKey?: string;
-  heartbeat?: { target?: string };
+  heartbeat?: HeartbeatWakeOverride;
 }) {
   queuePendingWakeReason({
     source: opts.source,
@@ -349,126 +343,6 @@ export function hasPendingHeartbeatWake() {
   return pendingWakes.size > 0 || Boolean(timer) || scheduled;
 }
 
-async function raceWakeHandler(
-  inner: Promise<HeartbeatRunResult>,
-  pendingWake: PendingWakeReason,
-): Promise<HeartbeatRunResult> {
-  let timeoutHandle: NodeJS.Timeout | null = null;
-  const timeoutPromise = new Promise<HeartbeatRunResult>((_, reject) => {
-    timeoutHandle = setTimeout(() => {
-      reject(
-        new Error(
-          `heartbeat-wake: handler exceeded ${WAKE_HANDLER_TIMEOUT_MS}ms (source=${pendingWake.source} reason=${pendingWake.reason ?? ""})`,
-        ),
-      );
-    }, WAKE_HANDLER_TIMEOUT_MS);
-    timeoutHandle.unref?.();
-  });
-  try {
-    return await Promise.race([inner, timeoutPromise]);
-  } finally {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-  }
-}
-
-/**
- * Record the minimum heartbeat interval the runner currently expects.
- * Used by `getHeartbeatWakeHealth` to decide what "too long since last fire"
- * means. Call this from the heartbeat-runner whenever the schedule changes.
- */
-export function setHeartbeatExpectedIntervalMs(ms: number | null): void {
-  if (ms === null || !Number.isFinite(ms) || ms <= 0) {
-    expectedIntervalMs = null;
-    return;
-  }
-  expectedIntervalMs = ms;
-}
-
-export type HeartbeatWakeHealth = {
-  ok: boolean;
-  running: boolean;
-  lastWakeStartedAt: number | null;
-  lastWakeCompletedAt: number | null;
-  expectedIntervalMs: number | null;
-  reason?: string;
-};
-
-/**
- * Liveness probe state. Returns ok=false when the wake module looks stuck:
- *   - `running` has been true longer than the per-handler watchdog cap, OR
- *   - the wake module hasn't completed a wake within 2× the expected
- *     interval (with a small grace period for fresh startup).
- *
- * Used by the gateway `/healthz/heartbeat` endpoint and the Docker
- * healthcheck so a deadlocked main loop fails health instead of looking live.
- */
-export function getHeartbeatWakeHealth(): HeartbeatWakeHealth {
-  const now = Date.now();
-  const state: HeartbeatWakeHealth = {
-    ok: true,
-    running,
-    lastWakeStartedAt,
-    lastWakeCompletedAt,
-    expectedIntervalMs,
-  };
-  if (running && typeof lastWakeStartedAt === "number") {
-    const stuckFor = now - lastWakeStartedAt;
-    if (stuckFor > WAKE_HANDLER_TIMEOUT_MS) {
-      state.ok = false;
-      state.reason = `wake handler stuck for ${stuckFor}ms (cap ${WAKE_HANDLER_TIMEOUT_MS}ms)`;
-      return state;
-    }
-  }
-  if (typeof expectedIntervalMs === "number" && expectedIntervalMs > 0) {
-    const overdueThreshold = Math.max(
-      expectedIntervalMs * 2 + WAKE_HANDLER_MIN_GRACE_MS,
-      WAKE_HANDLER_MIN_GRACE_MS,
-    );
-    if (lastWakeCompletedAt === null) {
-      // Nothing has completed yet; only complain after we're past the grace
-      // window. Fresh startups need time before the first heartbeat lands.
-      return state;
-    }
-    const age = now - lastWakeCompletedAt;
-    if (age > overdueThreshold) {
-      state.ok = false;
-      state.reason = `last wake completed ${age}ms ago (threshold ${overdueThreshold}ms)`;
-    }
-  }
-  return state;
-}
-
-/**
- * Production-safe reset for the wake module's `running`/`scheduled` flags
- * and pending timer. Use during config hot-reload to recover from a stuck
- * `running=true` left behind by a previously deadlocked wake handler. Unlike
- * `resetHeartbeatWakeStateForTests`, this preserves `handler` and pending
- * wake reasons so the runner can pick up immediately afterwards.
- */
-export function resetHeartbeatWakeRunningState(): {
-  wasRunning: boolean;
-  wasStuckMs: number | null;
-} {
-  const wasRunning = running;
-  const wasStuckMs =
-    running && typeof lastWakeStartedAt === "number" ? Date.now() - lastWakeStartedAt : null;
-  if (timer) {
-    clearTimeout(timer);
-  }
-  timer = null;
-  timerDueAt = null;
-  timerKind = null;
-  running = false;
-  scheduled = false;
-  lastWakeStartedAt = null;
-  if (handler && pendingWakes.size > 0) {
-    schedule(DEFAULT_COALESCE_MS, "normal");
-  }
-  return { wasRunning, wasStuckMs };
-}
-
 export function resetHeartbeatWakeStateForTests() {
   if (timer) {
     clearTimeout(timer);
@@ -479,9 +353,6 @@ export function resetHeartbeatWakeStateForTests() {
   pendingWakes.clear();
   scheduled = false;
   running = false;
-  lastWakeCompletedAt = null;
-  lastWakeStartedAt = null;
-  expectedIntervalMs = null;
   handlerGeneration += 1;
   handler = null;
 }
