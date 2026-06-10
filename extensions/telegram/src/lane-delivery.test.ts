@@ -15,13 +15,11 @@ function createHarness(params?: {
   answerMessageId?: number;
   answerStream?: DraftLaneState["stream"] | null;
   draftMaxChars?: number;
-  answerMessageIdAfterStop?: number;
-  answerStream?: DraftLaneState["stream"];
-  answerHasStreamedMessage?: boolean;
-  answerLastPartialText?: string;
-  answerPreviewVisibleSinceMs?: number;
-  splitFinalTextForPreview?: (text: string) => readonly string[];
-  nowMs?: number;
+  splitFinalTextForStream?: (text: string) => readonly string[];
+  resolveFinalTextCandidate?: (params: {
+    finalText: string;
+    laneName: LaneName;
+  }) => string | undefined;
 }) {
   const answer =
     params?.answerStream === null
@@ -62,7 +60,7 @@ function createHarness(params?: {
     lanes,
     draftMaxChars: params?.draftMaxChars ?? 4_096,
     applyTextToPayload: (payload: ReplyPayload, text: string) => ({ ...payload, text }),
-    splitFinalTextForPreview: params?.splitFinalTextForPreview,
+    splitFinalTextForStream: params?.splitFinalTextForStream,
     sendPayload,
     flushDraftLane,
     stopDraftLane,
@@ -135,116 +133,13 @@ describe("createLaneTextDeliverer", () => {
     });
     const finalResult = await deliverFinalAnswer(harness, "done");
 
-    expect(result.kind).toBe("sent");
-    expect(harness.editPreview).not.toHaveBeenCalled();
-    expect(harness.sendPayload).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "Short final" }),
-    );
-  });
-
-  it("does not create a synthetic preview for final-only text", async () => {
-    const answerStream = createSequencedTestDraftStream(777);
-    const harness = createHarness({
-      answerStream: answerStream as DraftLaneState["stream"],
-      answerHasStreamedMessage: false,
-    });
-
-    const result = await harness.deliverLaneText({
-      laneName: "answer",
-      text: "Final only",
-      payload: { text: "Final only" },
-      infoKind: "final",
-    });
-
-    expect(result.kind).toBe("sent");
-    expect(answerStream.update).not.toHaveBeenCalled();
-    expect(answerStream.materialize).not.toHaveBeenCalled();
-    expect(harness.editPreview).not.toHaveBeenCalled();
-    expect(harness.sendPayload).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "Final only" }),
-    );
-  });
-
-  it("keeps existing preview when final text regresses", async () => {
-    const harness = createHarness({ answerMessageId: 999 });
-    harness.lanes.answer.lastPartialText = "Recovered final answer.";
-
-    const result = await harness.deliverLaneText({
-      laneName: "answer",
-      text: "Recovered final answer",
-      payload: { text: "Recovered final answer" },
-      infoKind: "final",
-    });
-
-    expect(expectPreviewFinalized(result)).toEqual({
-      content: "Recovered final answer.",
-      messageId: 999,
-    });
-    expect(harness.editPreview).not.toHaveBeenCalled();
-    expect(harness.sendPayload).not.toHaveBeenCalled();
-    expect(harness.markDelivered).toHaveBeenCalledTimes(1);
-  });
-
-  it("falls back to normal delivery when final text exceeds preview edit limit", async () => {
-    const harness = createHarness({ answerMessageId: 999, draftMaxChars: 20 });
-    const longText = "x".repeat(50);
-
-    const result = await harness.deliverLaneText({
-      laneName: "answer",
-      text: longText,
-      payload: { text: longText },
-      infoKind: "final",
-    });
-
-    expect(result.kind).toBe("sent");
-    expect(harness.editPreview).not.toHaveBeenCalled();
-    expect(harness.sendPayload).toHaveBeenCalledWith(expect.objectContaining({ text: longText }));
-    expect(harness.log).toHaveBeenCalledWith(expect.stringContaining("preview final too long"));
-  });
-
-  it("forces a long final preview back to the first chunk before sending the rest", async () => {
-    const firstChunk = "First chunk boundary.";
-    const remainingText = " Follow-up body after the boundary.";
-    const finalText = `${firstChunk}${remainingText}`;
-    const harness = createHarness({
-      answerMessageId: 999,
-      answerHasStreamedMessage: true,
-      answerLastPartialText: `${firstChunk} overlap already visible`,
-      draftMaxChars: 24,
-      splitFinalTextForPreview: () => [firstChunk, remainingText],
-    });
-
-    const result = await deliverFinalAnswer(harness, finalText);
-
-    expect(expectPreviewFinalized(result)).toEqual({
-      content: finalText,
-      messageId: 999,
-    });
-    expect(harness.editPreview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        messageId: 999,
-        text: firstChunk,
-      }),
-    );
-    expect(harness.sendPayload).toHaveBeenCalledWith(
-      expect.objectContaining({ text: remainingText }),
-    );
-    expect(harness.lanes.answer.lastPartialText).toBe(firstChunk);
-  });
-
-  it("sends a fresh final when a message preview is long lived", async () => {
-    const visibleSinceMs = 10_000;
-    const harness = createHarness({
-      answerMessageId: 999,
-      answerHasStreamedMessage: true,
-      answerLastPartialText: "Working...",
-      answerPreviewVisibleSinceMs: visibleSinceMs,
-      nowMs: visibleSinceMs + 60_000,
-    });
-
-    const result = await deliverFinalAnswer(harness, HELLO_FINAL);
-
-    expect(result.kind).toBe("sent");
+    expect(blockResult.kind).toBe("preview-updated");
+    const delivery = expectPreviewFinalized(finalResult);
+    expect(delivery.content).toBe("done");
+    expect(delivery.messageId).toBe(999);
+    expect(harness.answer?.update).toHaveBeenNthCalledWith(1, "working");
+    expect(harness.answer?.update).toHaveBeenNthCalledWith(2, "done");
+    expect(harness.flushDraftLane).toHaveBeenCalledTimes(1);
     expect(harness.stopDraftLane).toHaveBeenCalledTimes(1);
     expect(harness.sendPayload).not.toHaveBeenCalled();
   });
