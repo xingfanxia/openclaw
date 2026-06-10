@@ -11,7 +11,11 @@ import { listRawChannelPluginCatalogEntries } from "../../../channels/plugins/ca
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type { PluginInstallRecord } from "../../../config/types.plugins.js";
 import { parseClawHubPluginSpec } from "../../../infra/clawhub-spec.js";
-import { parseRegistryNpmSpec } from "../../../infra/npm-registry-spec.js";
+import {
+  compareOpenClawReleaseVersions,
+  isOpenClawOrgNpmSpec,
+  parseRegistryNpmSpec,
+} from "../../../infra/npm-registry-spec.js";
 import {
   normalizeUpdateChannel,
   resolveRegistryUpdateChannel,
@@ -24,7 +28,12 @@ import {
   resolveClawHubInstallSpecsForUpdateChannel,
   resolveNpmInstallSpecsForUpdateChannel,
 } from "../../../plugins/install-channel-specs.js";
-import { resolveDefaultPluginExtensionsDir } from "../../../plugins/install-paths.js";
+import {
+  resolveDefaultPluginNpmDir,
+  resolveDefaultPluginExtensionsDir,
+  resolvePluginNpmPackageDir,
+  resolvePluginInstallDir,
+} from "../../../plugins/install-paths.js";
 import { installPluginFromNpmSpec } from "../../../plugins/install.js";
 import { loadInstalledPluginIndexInstallRecords } from "../../../plugins/installed-plugin-index-records.js";
 import { writePersistedInstalledPluginIndexInstallRecords } from "../../../plugins/installed-plugin-index-records.js";
@@ -48,6 +57,10 @@ import { updateNpmInstalledPlugins } from "../../../plugins/update.js";
 import { resolveWebSearchInstallCatalogEntry } from "../../../plugins/web-search-install-catalog.js";
 import { resolveUserPath } from "../../../utils.js";
 import { VERSION } from "../../../version.js";
+import {
+  collectConfiguredRuntimePluginIds,
+  CONFIGURED_RUNTIME_PLUGIN_INSTALL_CANDIDATES,
+} from "./configured-runtime-plugin-installs.js";
 import { asObjectRecord } from "./object.js";
 import {
   isPostCoreConvergencePass,
@@ -859,7 +872,11 @@ function formatInstalledConfiguredPluginChange(params: {
 async function installCandidate(params: {
   candidate: DownloadableInstallCandidate;
   records: Record<string, PluginInstallRecord>;
+  env: NodeJS.ProcessEnv;
   updateChannel?: UpdateChannel;
+  mode?: "install" | "update";
+  preferNpm?: boolean;
+  repairReason?: InstallCandidateRepairReason;
 }): Promise<{
   records: Record<string, PluginInstallRecord>;
   changes: string[];
@@ -883,7 +900,41 @@ async function installCandidate(params: {
     : null;
   const clawhubInstallSpec = clawhubSpecs?.installSpec ?? candidate.clawhubSpec;
   const npmInstallSpec = npmSpecs?.installSpec ?? candidate.npmSpec;
-  if (clawhubInstallSpec && candidate.defaultChoice !== "npm") {
+  const npmDir = resolveDefaultPluginNpmDir(params.env);
+  const existingClawHubPackagePath = clawhubInstallSpec
+    ? resolveExistingCandidateClawHubPackagePath({
+        candidate,
+        extensionsDir,
+      })
+    : null;
+  const existingNpmPackagePath = npmInstallSpec
+    ? resolveExistingCandidateNpmPackagePath({ candidate, npmDir })
+    : null;
+  const existingNpmPackageVersion = existingNpmPackagePath
+    ? await readNpmPackageVersion(existingNpmPackagePath)
+    : undefined;
+  if (
+    existingNpmPackagePath &&
+    existingNpmPackageVersion &&
+    npmInstallSpec &&
+    params.mode !== "update" &&
+    isPostCoreConvergencePass(params.env)
+  ) {
+    return await adoptExistingNpmPackage({
+      candidate,
+      records: params.records,
+      npmInstallSpec,
+      npmRecordSpec: npmSpecs?.recordSpec ?? npmInstallSpec,
+      packagePath: existingNpmPackagePath,
+      version: existingNpmPackageVersion,
+    });
+  }
+  const shouldTryClawHub =
+    clawhubInstallSpec &&
+    !existingNpmPackagePath &&
+    !(params.preferNpm && npmInstallSpec) &&
+    candidate.defaultChoice !== "npm";
+  if (shouldTryClawHub) {
     const clawhubResult = await installPluginFromClawHub({
       spec: clawhubInstallSpec,
       extensionsDir,
@@ -903,11 +954,20 @@ async function installCandidate(params: {
             installedAt: new Date().toISOString(),
           },
         },
-        changes: [`Installed missing configured plugin "${pluginId}" from ${clawhubInstallSpec}.`],
+        changes: [
+          formatInstalledConfiguredPluginChange({
+            pluginId,
+            installSpec: clawhubInstallSpec,
+            repairReason: params.repairReason,
+          }),
+        ],
         warnings: [],
       };
     }
-    if (!npmInstallSpec || !shouldFallbackClawHubToNpm(clawhubResult)) {
+    if (
+      !npmInstallSpec ||
+      !shouldFallbackClawHubToNpm({ result: clawhubResult, npmSpec: npmInstallSpec })
+    ) {
       return {
         records: params.records,
         changes: [],
@@ -931,7 +991,8 @@ async function installCandidate(params: {
       failedPluginId: candidate.pluginId,
     };
   }
-  const result = await installPluginFromNpmSpec({
+  const npmInstallMode = params.mode === "update" || existingNpmPackagePath ? "update" : "install";
+  let result = await installPluginFromNpmSpec({
     spec: npmInstallSpec,
     extensionsDir,
     npmDir,
@@ -971,7 +1032,11 @@ async function installCandidate(params: {
       ...params.records,
       [pluginId]: {
         source: "npm",
-        spec: npmSpecs?.recordSpec ?? npmInstallSpec,
+        spec: resolveNpmInstallRecordSpec({
+          requestedSpec: npmSpecs?.recordSpec ?? npmInstallSpec,
+          resolution: result.npmResolution,
+          pinResolvedRegistrySpec: candidate.trustedSourceLinkedOfficialInstall === true,
+        }),
         installPath: result.targetDir,
         version: result.version,
         installedAt: new Date().toISOString(),
@@ -980,7 +1045,11 @@ async function installCandidate(params: {
     },
     changes: [
       ...changes,
-      `Installed missing configured plugin "${pluginId}" from ${npmInstallSpec}.`,
+      formatInstalledConfiguredPluginChange({
+        pluginId,
+        installSpec: npmInstallSpec,
+        repairReason: params.repairReason,
+      }),
     ],
     warnings: [],
   };
@@ -1238,10 +1307,7 @@ async function repairMissingPluginInstalls(params: {
   const warnings: string[] = [];
   const failedPluginIds = new Set<string>();
   const deferredPluginIds = new Set<string>();
-  const updateChannel = resolveRegistryUpdateChannel({
-    configChannel: normalizeUpdateChannel(params.cfg.update?.channel),
-    currentVersion: VERSION,
-  });
+  const preferNpmInstalls = isLegacyPackageUpdateDoctorPass(env);
   let nextRecords = records;
 
   for (const [pluginId, record] of Object.entries(records)) {
@@ -1389,7 +1455,44 @@ async function repairMissingPluginInstalls(params: {
     if (!shouldReplaceBrokenOfficialInstall && hasUsableRecord) {
       continue;
     }
-    const installed = await installCandidate({ candidate, records: nextRecords, updateChannel });
+    const removalPath = shouldReplaceBrokenOfficialInstall
+      ? resolveSafeBrokenOfficialInstallRemovalPath({
+          pluginId: candidate.pluginId,
+          candidate,
+          record,
+          env,
+        })
+      : null;
+    const previousRecords = nextRecords;
+    const installed = await installCandidate({
+      candidate,
+      records: nextRecords,
+      env,
+      updateChannel,
+      mode: shouldReplaceBrokenOfficialInstall ? "update" : "install",
+      preferNpm: preferNpmInstalls,
+      ...(installedPluginIdsWithStaleVersionBoundRuntimePackages.has(candidate.pluginId)
+        ? { repairReason: "stale-version-bound-runtime" as const }
+        : {}),
+    });
+    if (shouldReplaceBrokenOfficialInstall) {
+      const installedRecord = installed.records[candidate.pluginId];
+      const replacementSucceeded = installed.records !== previousRecords;
+      if (
+        replacementSucceeded &&
+        removalPath &&
+        (!installedRecord?.installPath ||
+          !pathsEqual(resolveUserPath(installedRecord.installPath, env), removalPath))
+      ) {
+        try {
+          await rm(removalPath, { recursive: true, force: true });
+        } catch (error) {
+          warnings.push(
+            `Failed to remove broken installed plugin "${candidate.pluginId}" at ${removalPath}: ${String(error)}`,
+          );
+        }
+      }
+    }
     nextRecords = installed.records;
     changes.push(...installed.changes);
     warnings.push(...installed.warnings);
