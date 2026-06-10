@@ -2,6 +2,7 @@
 // block replies, directives, media, and message-tool reply suppression.
 import { describe, expect, it, vi } from "vitest";
 import { createInlineCodeState } from "../../packages/markdown-core/src/code-spans.js";
+import { parseReplyDirectives } from "../auto-reply/reply/reply-directives.js";
 import { createStreamingDirectiveAccumulator } from "../auto-reply/reply/streaming-directives.js";
 import {
   buildAssistantStreamData,
@@ -68,6 +69,10 @@ function createMessageUpdateContext(
       lastAssistantStreamItemId: undefined,
       assistantTexts: [],
       pendingAssistantReplyDirectives: undefined,
+      pendingToolMediaUrls: [],
+      pendingToolAudioAsVoice: false,
+      pendingToolTrustedLocalMedia: false,
+      messagingToolSentMediaUrls: [],
       ...params.state,
     },
     log: { debug: params.debug ?? vi.fn() },
@@ -133,6 +138,10 @@ function createMessageEndContext(
       deterministicApprovalPromptSent: false,
       messagingToolSentTexts: [],
       messagingToolSentTextsNormalized: [],
+      messagingToolSentMediaUrls: [],
+      pendingToolMediaUrls: [],
+      pendingToolAudioAsVoice: false,
+      pendingToolTrustedLocalMedia: false,
       includeReasoning: false,
       streamReasoning: false,
       blockReplyBreak: "message_end",
@@ -752,6 +761,26 @@ describe("consumePendingToolMediaIntoReply", () => {
     expect(state.pendingToolTrustedLocalMedia).toBe(false);
   });
 
+  it("does not append queued tool media already sent by a messaging tool", () => {
+    const state = {
+      pendingToolMediaUrls: ["/tmp/generated.png"],
+      pendingToolAudioAsVoice: false,
+      pendingToolTrustedLocalMedia: true,
+      messagingToolSentMediaUrls: ["/tmp/generated.png"],
+    };
+
+    expect(
+      consumePendingToolMediaIntoReply(state, {
+        text: "sent already",
+      }),
+    ).toEqual({
+      text: "sent already",
+    });
+    expect(state.pendingToolMediaUrls).toStrictEqual([]);
+    expect(state.pendingToolAudioAsVoice).toBe(false);
+    expect(state.pendingToolTrustedLocalMedia).toBe(false);
+  });
+
   it("does not append queued voice media when the reply already names media", () => {
     const state = {
       pendingToolMediaUrls: ["/tmp/reply.opus"],
@@ -823,6 +852,20 @@ describe("consumePendingToolMediaReply", () => {
     });
     expect(state.pendingToolMediaUrls).toStrictEqual([]);
     expect(state.pendingToolAudioAsVoice).toBe(false);
+  });
+
+  it("does not build an orphaned media reply for media already sent by a messaging tool", () => {
+    const state = {
+      pendingToolMediaUrls: ["/tmp/generated.png"],
+      pendingToolAudioAsVoice: false,
+      pendingToolTrustedLocalMedia: true,
+      messagingToolSentMediaUrls: ["/tmp/generated.png"],
+    };
+
+    expect(consumePendingToolMediaReply(state)).toBeNull();
+    expect(state.pendingToolMediaUrls).toStrictEqual([]);
+    expect(state.pendingToolAudioAsVoice).toBe(false);
+    expect(state.pendingToolTrustedLocalMedia).toBe(false);
   });
 });
 
@@ -1206,6 +1249,7 @@ describe("handleMessageEnd", () => {
         blockReplyBreak: "message_end",
         deltaBuffer: "Caption",
         blockBuffer: "Caption",
+        pendingToolMediaUrls: ["/tmp/final.png"],
       },
     });
 
@@ -1226,6 +1270,81 @@ describe("handleMessageEnd", () => {
     expect(firstMockArg(emitBlockReply, "block reply")).toMatchObject({
       text: "",
       mediaUrls: ["/tmp/final.png"],
+    });
+  });
+
+  it("strips stale local media paths authored from conversation history", () => {
+    const onAgentEvent = vi.fn();
+    const emitBlockReply = vi.fn();
+    const consumeReplyDirectives = vi.fn((text: string) =>
+      text ? parseReplyDirectives(text) : null,
+    );
+    const stalePath =
+      "/home/node/.openclaw/media/tool-image-generation/selfie_gym_start---old.webp";
+    const ctx = createMessageEndContext({
+      onAgentEvent,
+      emitBlockReply,
+      consumeReplyDirectives,
+      state: {
+        blockReplyBreak: "message_end",
+        deltaBuffer: "",
+        blockBuffer: "",
+        pendingToolMediaUrls: [],
+      },
+    });
+
+    void handleMessageEnd(ctx, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: `Caption\nMEDIA:${stalePath}` }],
+        usage: { input: 10, output: 5, total: 15 },
+      },
+    } as never);
+
+    expect(firstMockArg(onAgentEvent, "agent event")).toMatchObject({
+      stream: "assistant",
+      data: { text: "Caption", mediaUrls: undefined },
+    });
+    expect(firstMockArg(emitBlockReply, "block reply")).toEqual({
+      text: "Caption",
+      mediaUrls: undefined,
+      audioAsVoice: undefined,
+      replyToId: undefined,
+      replyToTag: false,
+      replyToCurrent: undefined,
+    });
+  });
+
+  it("keeps current-run local media paths queued by a trusted tool", () => {
+    const emitBlockReply = vi.fn();
+    const consumeReplyDirectives = vi.fn((text: string) =>
+      text ? parseReplyDirectives(text) : null,
+    );
+    const generatedPath = "/home/node/.openclaw/media/tool-image-generation/new-selfie.webp";
+    const ctx = createMessageEndContext({
+      emitBlockReply,
+      consumeReplyDirectives,
+      state: {
+        blockReplyBreak: "message_end",
+        deltaBuffer: "",
+        blockBuffer: "",
+        pendingToolMediaUrls: [generatedPath],
+      },
+    });
+
+    void handleMessageEnd(ctx, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: `Caption\nMEDIA:${generatedPath}` }],
+        usage: { input: 10, output: 5, total: 15 },
+      },
+    } as never);
+
+    expect(firstMockArg(emitBlockReply, "block reply")).toMatchObject({
+      text: "Caption",
+      mediaUrls: [generatedPath],
     });
   });
 

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { log } from "../logger.js";
 import {
   EMBEDDED_ABORT_SETTLE_TIMEOUT_MS,
+  buildEmbeddedSubscriptionParams,
   cleanupEmbeddedAttemptResources,
 } from "./attempt.subscription-cleanup.js";
 
@@ -16,6 +17,34 @@ function createDeferred<T>() {
   });
   return { promise, resolve, reject };
 }
+
+describe("buildEmbeddedSubscriptionParams", () => {
+  it("uses registered run tool names as the default trusted local-media set", () => {
+    const registeredToolNames = new Set(["image_generate", "selfie_generate"]);
+
+    const params = buildEmbeddedSubscriptionParams({
+      session: {} as never,
+      runId: "run-local-media-default",
+      builtinToolNames: registeredToolNames,
+    });
+
+    expect(params.trustedLocalMediaToolNames).toBe(registeredToolNames);
+  });
+
+  it("keeps an explicit trusted local-media set when provided", () => {
+    const registeredToolNames = new Set(["image_generate", "selfie_generate"]);
+    const trustedToolNames = new Set(["image_generate"]);
+
+    const params = buildEmbeddedSubscriptionParams({
+      session: {} as never,
+      runId: "run-local-media-explicit",
+      builtinToolNames: registeredToolNames,
+      trustedLocalMediaToolNames: trustedToolNames,
+    });
+
+    expect(params.trustedLocalMediaToolNames).toBe(trustedToolNames);
+  });
+});
 
 describe("cleanupEmbeddedAttemptResources", () => {
   afterEach(() => {

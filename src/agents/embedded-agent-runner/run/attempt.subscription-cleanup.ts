@@ -60,7 +60,10 @@ async function waitForEmbeddedAbortSettle(params: {
 export function buildEmbeddedSubscriptionParams(
   params: SubscribeEmbeddedAgentSessionParams,
 ): SubscribeEmbeddedAgentSessionParams {
-  return params;
+  return {
+    ...params,
+    trustedLocalMediaToolNames: params.trustedLocalMediaToolNames ?? params.builtinToolNames,
+  };
 }
 
 /**

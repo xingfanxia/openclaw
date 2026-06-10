@@ -5236,6 +5236,33 @@ describe("dispatchTelegramMessage draft streaming", () => {
       expect(finalDeliveryPayload().mediaUrls).toEqual([]);
     });
 
+    it("preserves final media when text-bearing block delivery reports visible send", async () => {
+      deliverReplies.mockResolvedValue({ delivered: true });
+      deliverInboundReplyWithMessageSendContext.mockResolvedValue({
+        status: "handled_visible",
+        delivery: { messageIds: ["101"], visibleReplySent: true },
+      });
+      dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+        await dispatcherOptions.deliver(
+          { text: "Selfie generated and delivered", mediaUrls: ["/tmp/cat.jpg"] },
+          { kind: "block" },
+        );
+        await dispatcherOptions.deliver(
+          { text: "Here is the image", mediaUrls: ["/tmp/cat.jpg"] },
+          { kind: "final" },
+        );
+        return { queuedFinal: true };
+      });
+
+      await dispatchWithContext({
+        context: createContext(),
+        streamMode: "off",
+        telegramDeps: telegramDepsForTest,
+      });
+
+      expect(finalDeliveryPayload().mediaUrls).toEqual(["/tmp/cat.jpg"]);
+    });
+
     it("preserves final media when block delivery reports no visible send", async () => {
       deliverReplies.mockResolvedValueOnce({ delivered: false });
       deliverReplies.mockResolvedValue({ delivered: true });

@@ -1877,7 +1877,14 @@ export const dispatchTelegramMessage = async ({
                       }
                     }
                     const trackBlockMedia = (delivered: boolean) => {
-                      if (delivered && info.kind === "block" && payload.mediaUrls?.length) {
+                      const payloadText =
+                        typeof payload.text === "string" ? payload.text.trim() : "";
+                      if (
+                        delivered &&
+                        info.kind === "block" &&
+                        payloadText.length === 0 &&
+                        payload.mediaUrls?.length
+                      ) {
                         for (const url of payload.mediaUrls) {
                           sentBlockMediaUrls.add(url);
                         }

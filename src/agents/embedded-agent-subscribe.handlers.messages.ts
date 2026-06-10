@@ -278,12 +278,13 @@ export function resolveSilentReplyFallbackText(params: {
   return fallback;
 }
 
-function clearPendingToolMedia(
-  state: Pick<
-    EmbeddedAgentSubscribeState,
-    "pendingToolMediaUrls" | "pendingToolAudioAsVoice" | "pendingToolTrustedLocalMedia"
-  >,
-) {
+type PendingToolMediaState = Pick<
+  EmbeddedAgentSubscribeState,
+  "pendingToolMediaUrls" | "pendingToolAudioAsVoice" | "pendingToolTrustedLocalMedia"
+> &
+  Partial<Pick<EmbeddedAgentSubscribeState, "messagingToolSentMediaUrls">>;
+
+function clearPendingToolMedia(state: PendingToolMediaState) {
   state.pendingToolMediaUrls = [];
   state.pendingToolAudioAsVoice = false;
   state.pendingToolTrustedLocalMedia = false;
@@ -293,12 +294,82 @@ function hasReplyMedia(payload: BlockReplyPayload): boolean {
   return (payload.mediaUrls ?? []).some((url) => url.trim().length > 0);
 }
 
+function normalizeMediaUrlForComparison(url: string): string {
+  return url.trim();
+}
+
+function isReplaySensitiveMediaUrl(url: string): boolean {
+  const normalized = normalizeMediaUrlForComparison(url);
+  const lower = normalized.toLowerCase();
+  return (
+    (normalized.startsWith("/") && normalized.includes("/.openclaw/")) ||
+    lower.startsWith("file://") ||
+    lower.startsWith("media://") ||
+    lower.startsWith("telegram:file/")
+  );
+}
+
+function undeliveredPendingToolMediaUrls(state: PendingToolMediaState): string[] {
+  const pendingUrls = uniqueStrings(state.pendingToolMediaUrls ?? []).filter(
+    (url) => normalizeMediaUrlForComparison(url).length > 0,
+  );
+  const sentUrls = new Set(
+    (state.messagingToolSentMediaUrls ?? [])
+      .map(normalizeMediaUrlForComparison)
+      .filter((url) => url.length > 0),
+  );
+  if (sentUrls.size === 0) {
+    return pendingUrls;
+  }
+  return pendingUrls.filter((url) => !sentUrls.has(normalizeMediaUrlForComparison(url)));
+}
+
+function filterAssistantAuthoredMediaUrls(
+  state: PendingToolMediaState,
+  mediaUrls: readonly string[] | undefined,
+): string[] | undefined {
+  if (!mediaUrls?.length) {
+    return undefined;
+  }
+  const currentToolMediaUrls = new Set(
+    undeliveredPendingToolMediaUrls(state).map(normalizeMediaUrlForComparison),
+  );
+  const filtered = uniqueStrings(mediaUrls).filter((url) => {
+    const normalized = normalizeMediaUrlForComparison(url);
+    if (!normalized) {
+      return false;
+    }
+    if (!isReplaySensitiveMediaUrl(normalized)) {
+      return true;
+    }
+    return currentToolMediaUrls.has(normalized);
+  });
+  return filtered.length ? filtered : undefined;
+}
+
+function filterAssistantReplyDirectiveMedia(
+  state: PendingToolMediaState,
+  parsed: ReplyDirectiveParseResult | null | undefined,
+): ReplyDirectiveParseResult | null | undefined {
+  if (!parsed) {
+    return parsed;
+  }
+  const sourceMediaUrls = parsed.mediaUrls?.length
+    ? parsed.mediaUrls
+    : parsed.mediaUrl
+      ? [parsed.mediaUrl]
+      : undefined;
+  const filteredMediaUrls = filterAssistantAuthoredMediaUrls(state, sourceMediaUrls);
+  return {
+    ...parsed,
+    mediaUrls: filteredMediaUrls,
+    mediaUrl: filteredMediaUrls?.[0],
+  };
+}
+
 /** Moves queued tool media into a non-reasoning assistant reply payload. */
 export function consumePendingToolMediaIntoReply(
-  state: Pick<
-    EmbeddedAgentSubscribeState,
-    "pendingToolMediaUrls" | "pendingToolAudioAsVoice" | "pendingToolTrustedLocalMedia"
-  >,
+  state: PendingToolMediaState,
   payload: BlockReplyPayload,
 ): BlockReplyPayload {
   if (payload.isReasoning) {
@@ -317,9 +388,12 @@ export function consumePendingToolMediaIntoReply(
     clearPendingToolMedia(state);
     return payload;
   }
-  const mergedMediaUrls = Array.from(
-    new Set([...(payload.mediaUrls ?? []), ...state.pendingToolMediaUrls]),
-  );
+  const pendingMediaUrls = undeliveredPendingToolMediaUrls(state);
+  if (pendingMediaUrls.length === 0) {
+    clearPendingToolMedia(state);
+    return payload;
+  }
+  const mergedMediaUrls = Array.from(new Set([...(payload.mediaUrls ?? []), ...pendingMediaUrls]));
   const mergedPayload: BlockReplyPayload = {
     ...payload,
     mediaUrls: mergedMediaUrls.length ? mergedMediaUrls : undefined,
@@ -332,26 +406,15 @@ export function consumePendingToolMediaIntoReply(
 
 /** Consumes queued tool media as a standalone reply payload. */
 export function consumePendingToolMediaReply(
-  state: Pick<
-    EmbeddedAgentSubscribeState,
-    "pendingToolMediaUrls" | "pendingToolAudioAsVoice" | "pendingToolTrustedLocalMedia"
-  >,
+  state: PendingToolMediaState,
 ): BlockReplyPayload | null {
   const payload = readPendingToolMediaReply(state);
-  if (!payload) {
-    return null;
-  }
   clearPendingToolMedia(state);
   return payload;
 }
 
 /** Reads queued tool media without clearing it. */
-export function readPendingToolMediaReply(
-  state: Pick<
-    EmbeddedAgentSubscribeState,
-    "pendingToolMediaUrls" | "pendingToolAudioAsVoice" | "pendingToolTrustedLocalMedia"
-  >,
-): BlockReplyPayload | null {
+export function readPendingToolMediaReply(state: PendingToolMediaState): BlockReplyPayload | null {
   if (
     state.pendingToolMediaUrls.length === 0 &&
     !state.pendingToolAudioAsVoice &&
@@ -359,10 +422,12 @@ export function readPendingToolMediaReply(
   ) {
     return null;
   }
+  const pendingMediaUrls = undeliveredPendingToolMediaUrls(state);
+  if (pendingMediaUrls.length === 0) {
+    return null;
+  }
   return {
-    mediaUrls: state.pendingToolMediaUrls.length
-      ? uniqueStrings(state.pendingToolMediaUrls)
-      : undefined,
+    mediaUrls: pendingMediaUrls,
     audioAsVoice: state.pendingToolAudioAsVoice || undefined,
     trustedLocalMedia: state.pendingToolTrustedLocalMedia || undefined,
   };
@@ -774,7 +839,10 @@ export function handleMessageUpdate(
     const parsedDelta = visibleDelta ? ctx.consumePartialReplyDirectives(visibleDelta) : null;
     const finalParsedDelta =
       evtType === "text_end" ? ctx.consumePartialReplyDirectives("", { final: true }) : null;
-    const parsedStreamDirectives = mergeReplyDirectiveResults(parsedDelta, finalParsedDelta);
+    const parsedStreamDirectives = filterAssistantReplyDirectiveMedia(
+      ctx.state,
+      mergeReplyDirectiveResults(parsedDelta, finalParsedDelta),
+    );
     if (shouldUsePhaseAwareBlockReply) {
       recordPendingAssistantReplyDirectives(ctx.state, parsedStreamDirectives);
     }
@@ -917,9 +985,10 @@ export function handleMessageEnd(
       : "";
   const trimmedReasoning = rawThinking ? rawThinking.trim() : "";
   const trimmedText = text.trim();
-  const parsedText = trimmedText
+  const parsedTextRaw = trimmedText
     ? parseReplyDirectives(splitTrailingDirective(trimmedText, { final: true }).text)
     : null;
+  const parsedText = filterAssistantReplyDirectiveMedia(ctx.state, parsedTextRaw);
   const cleanedText = parsedText?.text ?? "";
   const { mediaUrls, hasMedia } = resolveSendableOutboundReplyParts(parsedText ?? {});
 
@@ -1018,8 +1087,9 @@ export function handleMessageEnd(
   }
 
   const emitSplitResultAsBlockReply = (
-    splitResult: ReturnType<typeof ctx.consumeReplyDirectives> | null | undefined,
+    splitResultRaw: ReturnType<typeof ctx.consumeReplyDirectives> | null | undefined,
   ) => {
+    const splitResult = filterAssistantReplyDirectiveMedia(ctx.state, splitResultRaw);
     if (!splitResult || !onBlockReply) {
       return;
     }
